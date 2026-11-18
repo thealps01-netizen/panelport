@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.1.0 — 2026-11-18
+
+### Changed
+- New look (NORA): a night-blue ground with white as the interface colour, panel names in tall
+  condensed capitals, and a matching light version for Windows light mode. The fonts ship inside
+  the app; nothing is loaded from the internet.
+- The launcher has three views: Panels, Find panels and Settings. In Panels, the selected panel
+  fills the centre with a stored preview of its window and its name set large; a list on the left
+  shows every panel's state in words and colour; Open, Refresh, Logs and Edit sit on the right.
+  A stopped Docker panel offers "Start containers" right in the list.
+- Every window has Panelport's own title bar. Minimize, maximize and close behave like Windows'
+  own buttons, including the Snap Layouts menu when you hover over maximize, double-click to
+  maximize, dragging to the screen edge, Alt+F4 and Win+Up/Win+Down.
+- A panel window's title bar shows the panel's name, address and state, with Refresh and
+  "Back to panels". The title bar is a separate part of the window; the panel page still has no
+  access to Panelport's functions.
+- Find panels also lists the panels you already added, and says which addresses it skipped
+  because they are not web pages.
+- Settings has sections for panels (drag to reorder, or Alt+Up/Alt+Down), general options,
+  notifications, saved passwords and About.
+
+### Added
+- Panel previews: a still image of each panel, taken on this PC while its window is open, shown
+  in the launcher. Can be switched off and deleted in Settings.
+- Container logs: the last lines of a Docker panel's container, in the launcher and on the
+  "not reachable" page.
+- Settings switches for notifications and for saving passwords, and a button that deletes the
+  saved passwords.
+- `--self-test` also checks that a panel window has its two parts, that the panel page is refused
+  every command, and that the title-bar buttons answer Windows' hit test.
+
 ## 1.0.1 — 2026-11-18
 
 ### Fixed

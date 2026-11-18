@@ -48,8 +48,9 @@ function selectedPanel() {
   return L.panels.find((p) => p.id === L.selected) || null;
 }
 
-function stateWord(p) {
+function stateWord(p, short) {
   if (p.state === "down" && p.since_ms) return t("downFor", since(p.since_ms));
+  if (short && p.state === "not_page") return t("not_page_short");
   return t(p.state);
 }
 
@@ -67,7 +68,7 @@ function renderList() {
       "aria-selected": String(p.id === L.selected),
       onclick: () => select(p.id),
       ondblclick: () => openPanel(p.id),
-    }, nameEl("span", "n", p.name), stateEl(p.state, stateWord(p)));
+    }, nameEl("span", "n", p.name), stateEl(p.state, stateWord(p, true)));
     if (p.can_start) {
       item.append(h("button", { class: "btn solid small act", onclick: (e) => { e.stopPropagation(); startContainers(p.id, e.currentTarget); } }, t("startContainers")));
     }
@@ -165,12 +166,12 @@ function renderRail() {
   rail.dataset.sig = sig;
   const ring = (cls, ic, label, onclick, extra) =>
     h("button", Object.assign({ class: `ring${cls ? " " + cls : ""}`, onclick }, extra || {}), h("span", {}, icon(ic)), label);
-  rail.replaceChildren(
+  rail.replaceChildren(...[
     ring("primary", "open", t("open"), () => openPanel(p.id)),
     ring("", "reload", t("reload"), () => { invoke("check_now"); L.previews[p.id] = null; refresh(); toast(t("checking")); }),
     p.container ? ring("", "logs", t("logs"), () => toggleLogs(p.id)) : null,
     ring("", "edit", t("edit"), () => { show("settings"); window.settingsView && window.settingsView.edit(p.id); }),
-  );
+  ].filter(Boolean));
 }
 
 function renderEmpty() {
@@ -315,7 +316,7 @@ function renderFind() {
   if (L.find.state === "scanning") {
     title.textContent = t("find");
     meta.textContent = "";
-    rows.replaceChildren(h("div", { class: "scanning", role: "status" }, h("div", { class: "sweep" }), t("scanning")));
+    rows.replaceChildren(h("div", { class: "scanning", role: "status" }, h("div", { class: "pulse" }), t("scanning")));
     renderFindCard();
     return;
   }

@@ -6,7 +6,7 @@ const STRINGS = {
     panels: "Panels", find: "Find panels", settings: "Settings", addPanel: "Add panel",
     minimize: "Minimize", maximize: "Maximize", restore: "Restore", close: "Close",
     dockerRunning: "Docker Desktop is running", dockerStopped: "Docker is not running", dockerMissing: "Docker is not installed", dockerUnknown: "Checking Docker…",
-    up: "Running", down: "Not reachable", error: "Server error", not_page: "Not a web page / no access", checking: "Checking…",
+    up: "Running", down: "Not reachable", error: "Server error", not_page: "Not a web page / no access", not_page_short: "No access", checking: "Checking…",
     downFor: (d) => `Down · ${d}`,
     listHead: (n, up) => (n === 1 ? `1 panel · ${up} running` : `${n} panels · ${up} running`),
     startContainers: "Start containers", startDocker: "Start Docker Desktop", starting: "Starting…",
@@ -85,7 +85,7 @@ const STRINGS = {
     panels: "Paneller", find: "Panel bul", settings: "Ayarlar", addPanel: "Panel ekle",
     minimize: "Küçült", maximize: "Büyüt", restore: "Önceki boyut", close: "Kapat",
     dockerRunning: "Docker Desktop çalışıyor", dockerStopped: "Docker çalışmıyor", dockerMissing: "Docker kurulu değil", dockerUnknown: "Docker denetleniyor…",
-    up: "Çalışıyor", down: "Ulaşılamıyor", error: "Sunucu hatası", not_page: "Web sayfası değil / erişim yok", checking: "Denetleniyor…",
+    up: "Çalışıyor", down: "Ulaşılamıyor", error: "Sunucu hatası", not_page: "Web sayfası değil / erişim yok", not_page_short: "Erişim yok", checking: "Denetleniyor…",
     downFor: (d) => `Kapalı · ${d}`,
     listHead: (n, up) => `${n} panel · ${up} çalışıyor`,
     startContainers: "Konteyneri başlat", startDocker: "Docker Desktop'ı başlat", starting: "Başlatılıyor…",
@@ -224,6 +224,13 @@ function since(ms, long) {
   if (m < 60) return long ? t("minutesLong", m) : t("minutes", m);
   const hr = Math.round(m / 60);
   return long ? t("hoursLong", hr) : t("hours", hr);
+}
+
+/** Technical check details come from the app in English; the common ones read in Turkish too. */
+const DETAIL_TR = { "connection refused": "bağlantı reddedildi", "timeout": "zaman aşımı", "host not found": "ana makine bulunamadı", "no content type": "içerik türü yok" };
+function detailText(d) {
+  if (LANG !== "tr" || !d) return d || "";
+  return d.split(", ").map((part) => DETAIL_TR[part] || part).join(", ");
 }
 
 function clock(ms) {

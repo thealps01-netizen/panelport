@@ -17,8 +17,11 @@ answering. It is a small Windows app built with Tauri 2 and Rust.
   web ports published by running Docker containers and the local web servers that answer HTTP.
   It suggests a name from the container or the page title. You tick the ones to add.
 - **One window per panel.** Each window shows the panel's own icon and remembers its size,
-  position and maximized state. Links to other sites open in your default browser.
-- **Launcher and tray.** The launcher shows a card per panel with its live status. The tray icon
+  position and maximized state. Its title bar shows the panel's name, address and state, with
+  Refresh and *Back to panels*. Links to other sites open in your default browser.
+- **Launcher and tray.** The launcher lists every panel with its state in words and colour and
+  shows the selected one large, with a stored preview of its window, its address, response time
+  and container; *Open*, *Refresh*, *Logs* and *Edit* sit beside it. The tray icon
   is green when every panel answers, amber when some do not, and red when none do. Its menu lists
   every panel with a status dot, plus *Open Panelport*, *Find panels…*, *Settings…*,
   *Start with Windows* (off until you turn it on) and *Quit*.
@@ -29,6 +32,9 @@ answering. It is a small Windows app built with Tauri 2 and Rust.
   window offers *Start Docker Desktop* if the engine is not running, and *Start containers* for
   the stopped containers (or Compose project) that publish the panel's port. Nothing starts until
   you click.
+- Every window has Panelport's own title bar. Its buttons behave like Windows' own: hover over
+  maximize for Snap Layouts, double-click the bar to maximize, drag it to a screen edge, Alt+F4,
+  Win+Up / Win+Down.
 - Closing the launcher keeps Panelport running in the tray. Starting Panelport again brings the
   existing window back.
 - Light and dark mode follow Windows. The interface is in Turkish when Windows is, English
@@ -36,6 +42,7 @@ answering. It is a small Windows app built with Tauri 2 and Rust.
 - No telemetry and no update checks. Panelport only connects to the panel addresses you add and
   to Docker on this computer.
 - Panel windows can save the passwords you type into them (see "Saved passwords").
+- The launcher can keep a preview image of each panel (see "Panel previews").
 
 ## Install
 
@@ -49,8 +56,10 @@ the "Windows protected your PC" screen, how to check the download, and how to un
 Panels are web pages made by other programs, so Panelport does not trust them:
 
 - Panel pages cannot call any of Panelport's native commands (Tauri IPC). Only the pages built
-  into Panelport can. A unit test calls every command from six panel addresses and expects a
-  refusal; an end-to-end run repeats the check from inside a live Arcane window.
+  into Panelport can. A panel window is two parts: the title bar (a built-in page that may only
+  control its own window) and the panel, whose page gets no commands at all. A unit test calls
+  every command from six panel addresses and expects a refusal; an end-to-end run repeats the
+  check from inside a live Arcane window, and `--self-test` repeats it in a real WebView2 window.
 - A panel window shows only its own panel's site and Panelport's built-in pages.
 - Docker actions use a fixed list of commands. Container ids come from Docker itself, never from
   a web page.
@@ -65,6 +74,7 @@ Report security problems privately as described in [SECURITY.md](SECURITY.md).
 | Settings (`settings.json`) and cached panel icons | `%LOCALAPPDATA%\io.github.thealps01-netizen.panelport` |
 | Logs (1 MB per file, 3 old files kept) | `%LOCALAPPDATA%\io.github.thealps01-netizen.panelport\logs` |
 | Saved passwords and other browsing data of panel windows | `%LOCALAPPDATA%\io.github.thealps01-netizen.panelport\EBWebView` |
+| Panel previews | `%LOCALAPPDATA%\io.github.thealps01-netizen.panelport\previews` |
 
 ## Saved passwords
 
@@ -76,10 +86,22 @@ Panelport uses; Panelport itself never reads or stores your passwords.
   protected by WebView2 for your Windows user account.
 - They are not synced to a Microsoft account and not shared with Microsoft Edge or any other
   browser.
-- Panelport's own windows (launcher, settings) do not save or fill anything.
-- To delete all saved passwords: quit Panelport (tray icon → *Quit*), then delete the
-  `EBWebView` folder. This also signs you out of every panel. The uninstaller keeps the folder
-  unless you tick its option to delete the app data.
+- Panelport's own pages (launcher, title bars) do not save or fill anything.
+- *Settings → Saved passwords* turns saving off and has a button that deletes every saved
+  password. Deleting the `EBWebView` folder while Panelport is not running also removes them,
+  and signs you out of every panel. The uninstaller keeps the folder unless you tick its option
+  to delete the app data.
+
+## Panel previews
+
+The launcher shows a still image of each panel's window, taken on this PC with WebView2 while
+the window is open (after it loads, then at most every 3 minutes). The image can contain whatever
+the panel showed at that moment, including names and numbers on its screen.
+
+- Previews are stored only on this PC, in the `previews` folder above, and are never sent
+  anywhere. The launcher never embeds the live panel; it only shows the stored image.
+- *Settings → General → Keep previews* switches them off (which deletes the stored ones);
+  *Delete previews* removes them at any time. A panel you never opened shows its icon instead.
 
 ## Building
 

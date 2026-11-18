@@ -147,3 +147,93 @@ Each entry: the choice, and why. Made without asking the owner, as briefed; revi
     for Panelport because wry always sets the browser arguments itself, so the port would have to
     be a switch built into the release binary. That exposes a local debugging interface in the
     shipped app, so it was not added; the prompt is left to a manual check.
+
+## 1.1.0
+
+33. **NORA world for every bundled page.** The owner chose the NORA direction (catalog world
+    "pop-culture shelf / vertical video feed") over the other comps; `.impeccable/surfaces/` holds
+    the contract. The launcher gives the selected panel the stage: its stored preview under a dark
+    scrim, its name set huge over the bottom edge, URL, state, response time and container below.
+    Ground `#070d16 → #1d4363` radial, white as the only interface colour, status green
+    `#5ee39a`, amber `#ffc44d`, red `#ff6b6b` only for state. Antonio (200/300) for panel names
+    and display, Manrope for interface text, JetBrains Mono for ports and milliseconds.
+34. **Status reads at a glance.** The owner found the mock's statuses too small. Every state is a
+    dot with a soft ring plus the word in the state's colour (14 px semibold in lists, 17 px on
+    the stage and the down page), never colour alone.
+35. **Fonts are files inside the app.** Subsets (Latin, Latin-1, Latin Extended-A for Turkish)
+    of the three variable fonts are bundled as woff2 (`ui/fonts`, about 97 KB),
+    loaded with `@font-face` from the app itself; the CSP stays `font-src 'self'` and nothing is
+    fetched from the network. `scripts/fetch-fonts.sh` rebuilds them from a pinned google/fonts
+    commit; their OFL texts are appended to `THIRD_PARTY_LICENSES.txt`.
+36. **Turkish dotted İ.** Uppercased panel names render with `lang="en"` unless the name contains
+    Turkish letters, so "Home Assistant" becomes "HOME ASSISTANT", not "HOME ASSİSTANT".
+37. **Light counterpart, same world.** Windows light mode switches to a pale mist-blue ground
+    (`#f6f9fc → #ccdaea`) with ink `#0b1622` as the only interface colour, the same type and
+    controls; the stage and the log stay dark because they frame a picture and terminal output.
+    State words use darker tones in light mode (`#127a45`, `#8a5800`, `#b3242c`) for contrast;
+    the dots keep the dark-mode hues. The owner uses dark.
+38. **No eyebrows.** The mocks put "Panel kapalı · 4 dakikadır" and "Bu bilgisayarda bulunanlar ·
+    6 sn önce tarandı" above the big headings. The design rules this build follows ban a label
+    above a heading, so both lines sit below their heading as the status and scan lines.
+39. **One launcher window, three views.** Panels, Find panels and Settings are tabs of the
+    launcher, as in the mocks; the separate Settings window of 1.0 is gone. The tray's
+    "Find panels…" and "Settings…" open the launcher on that view.
+40. **Container logs, safely.** "Günlük" (launcher rail) and the down page's log box show the last
+    40 lines of the container that publishes the panel's port: `docker logs --tail 40
+    --timestamps <id>`, added to the fixed command list; the id comes from Docker's own output,
+    colour codes are stripped, and the text is shown with `textContent`. The button is not shown
+    for panels that are not Docker containers on this PC. The mock's "Günlüğü aç" button on the
+    down page was dropped: the log is already on that page.
+41. **Settings toggles.** "Panel kapanınca bildir", "Şifreleri kaydet" and "Önizlemeleri sakla"
+    are stored as `prefs` in `settings.json`, defaults on. The fields are optional with defaults,
+    so 1.0.x files load unchanged and the schema stays 1; a 1.0.x Panelport reading a 1.1 file
+    ignores them. Turning previews off deletes the stored previews. "Kayıtlı şifreleri sil" uses
+    WebView2's `ClearBrowsingData(PASSWORD_AUTOSAVE)` on Panelport's own profile.
+
+### Panel previews
+
+42. **Stored snapshot, never a live embed.** When a panel window has loaded its panel, Panelport
+    takes a PNG with WebView2's `CapturePreview` (2.5 s after the load, then at most every 3
+    minutes while the window is visible) into `<app data>/previews/<id>.png`. The launcher shows
+    only that file. A panel never opened shows its icon or letter. Linux (development only) takes
+    no previews.
+
+### Custom title bar
+
+43. **Frameless windows with a bundled title bar.** Every window uses `decorations(false)`. The
+    launcher's top row is its title bar; a panel window's title bar is its own webview (below).
+    Dragging empty bar space calls `start_dragging` (the system move loop, so Aero Snap by drag
+    works), double-click toggles maximize, Tauri keeps the DWM shadow, the Windows 11 rounded
+    corners and edge resizing for undecorated windows.
+44. **Snap Layouts through the system hit test.** The minimize, maximize and close glyphs are
+    drawn by the page. Over them sits a native child window (`PANELPORT_CAPTION_BUTTONS`,
+    `WS_EX_LAYERED | WS_EX_NOREDIRECTIONBITMAP`, so it draws nothing) that answers
+    `WM_NCHITTEST` with `HTMINBUTTON`, `HTMAXBUTTON` and `HTCLOSE`, handles the button clicks with
+    `WM_SYSCOMMAND`, and reports hover and press to the page. Windows 11 shows the Snap Layouts
+    flyout for a window that reports `HTMAXBUTTON`. Sources: Microsoft Learn, "Support snap
+    layouts for desktop apps on Windows 11"
+    (https://learn.microsoft.com/windows/apps/desktop/modernize/ui/apply-snap-layout-menu), the
+    same input-sink pattern in Windows Terminal (`NonClientIslandWindow`), and Tauri's own
+    undecorated-resize border window (`TAURI_DRAG_RESIZE_WINDOW` in tauri-runtime-wry), which
+    returns hit-test codes from a same-thread child window in the same way. The window keeps
+    `WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX`, so Alt+F4 and Win+Up / Win+Down work.
+45. **Two webviews per panel window (Tauri `unstable`).** A panel window (`pwin-<id>`) holds a
+    title-bar webview `bar-<id>` (bundled `titlebar.html`) above the panel webview `panel-<id>`.
+    - `bar-*` has its own capability (`title-bar.json`) with only the window commands and
+      `bar_info` / `bar_reload` / `bar_back`, which act on the caller's own window and panel and
+      take no arguments. Its navigation guard allows `titlebar.html` and nothing else.
+    - `panel-*` keeps the 1.0 rules: no `remote` section anywhere, so its panel origin has no IPC;
+      only the bundled down page inside it may call app commands; per-origin navigation guard,
+      password autosave and the same data folder.
+    - Capabilities match webviews by label and the launcher by window; panel windows themselves
+      are in no capability, so a webview there is matched only by its own label.
+    - Risk: the multi-webview API is marked unstable and may change in any Tauri release, so
+      `tauri`, `tauri-build`, `tauri-runtime-wry`, `wry`, `webview2-com` and `windows` are pinned
+      to exact versions and upgraded deliberately. On Linux (development only) Tauri packs child
+      webviews into a GTK box that ignores bounds; Panelport pins the bar's height there.
+46. **Evidence.** Unit tests on the mock runtime build real two-webview windows and check every
+    app, title-bar, core and plugin command from six panel origins in four webviews; mutation runs
+    (`scripts/mutation-check.sh`) show each rule's test failing when the rule is broken.
+    `--self-test` builds a real panel window and checks two webviews, IPC refused to the panel
+    origin, password read-back and the caption hit test; the clean-runner job requires all four.
+    `scripts/screens-windows.ps1` drives the real WebView2 build on the Windows runner.

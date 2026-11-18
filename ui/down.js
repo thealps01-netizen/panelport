@@ -101,7 +101,7 @@ function render(d) {
   if (p.state !== "checking") {
     const kind = p.state === "down" ? "warn" : "warn";
     const title = p.state === "not_page" ? t("addrNotPage") : p.state === "error" ? t("addrError") : t("addrNo");
-    steps.push(step(kind, title, t("addrD", hostPort(p.url), p.detail || "")));
+    steps.push(step(kind, title, t("addrD", hostPort(p.url), detailText(p.detail))));
   }
   document.getElementById("steps").replaceChildren(...steps);
   document.getElementById("retry").textContent = t("retrying");
