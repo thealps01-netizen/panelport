@@ -59,6 +59,16 @@ pub fn dot_and_word(st: PanelState, t: &'static i18n::T) -> (&'static [u8], &'st
         PanelState::Down => (DOT_RED, t.down),
         PanelState::Checking => (DOT_GREY, t.checking),
         PanelState::NotPage => (DOT_AMBER, t.not_page),
+        PanelState::ClientError => (DOT_AMBER, t.client_error),
+    }
+}
+
+/// Tray menu text for a panel's state; a client error names its HTTP status.
+pub fn state_text(st: PanelState, status: Option<u16>, t: &'static i18n::T) -> String {
+    let word = dot_and_word(st, t).1;
+    match (st, status) {
+        (PanelState::ClientError, Some(code)) => format!("{word} · HTTP {code}"),
+        _ => word.to_string(),
     }
 }
 
@@ -106,8 +116,13 @@ fn build_menu(app: &AppHandle, state: &AppState) -> tauri::Result<Menu<tauri::Wr
         )?)?;
     }
     for p in &panels {
-        let (dot, word) = dot_and_word(state.panel_state(&p.id), t);
-        let text = format!("{} — {word}", p.name);
+        let st = state.panel_state(&p.id);
+        let (dot, _) = dot_and_word(st, t);
+        let text = format!(
+            "{} — {}",
+            p.name,
+            state_text(st, state.panel_status(&p.id), t)
+        );
         menu.append(&IconMenuItem::with_id(
             app,
             format!("panel:{}", p.id),
@@ -196,9 +211,11 @@ pub fn set_autostart(app: &AppHandle, enable: bool) -> bool {
 pub fn refresh(app: &AppHandle, state: &AppState) {
     let panels = state.snapshot().panels;
     let states: Vec<PanelState> = panels.iter().map(|p| state.panel_state(&p.id)).collect();
+    let statuses: Vec<Option<u16>> = panels.iter().map(|p| state.panel_status(&p.id)).collect();
     let sig = format!(
-        "{:?}|{}",
+        "{:?}|{:?}|{}",
         states,
+        statuses,
         panels
             .iter()
             .map(|p| format!("{}={}", p.id, p.name))
@@ -260,6 +277,23 @@ mod tests {
         assert_eq!(overall(&[Up, NotPage]), Overall::Degraded);
         assert_eq!(overall(&[NotPage, NotPage]), Overall::Degraded);
         assert_eq!(overall(&[Down, NotPage]), Overall::Degraded);
+    }
+
+    #[test]
+    fn client_error_is_amber_degraded_and_names_its_status() {
+        use crate::i18n::{t, Lang};
+        assert_eq!(overall(&[Up, ClientError]), Overall::Degraded);
+        assert_eq!(overall(&[ClientError]), Overall::Degraded);
+        assert_eq!(dot_and_word(ClientError, t(Lang::En)).0, DOT_AMBER);
+        assert_eq!(
+            state_text(ClientError, Some(400), t(Lang::En)),
+            "error · HTTP 400"
+        );
+        assert_eq!(
+            state_text(ClientError, Some(429), t(Lang::Tr)),
+            "hata · HTTP 429"
+        );
+        assert_eq!(state_text(Up, Some(200), t(Lang::En)), "running");
     }
 
     #[test]

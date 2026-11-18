@@ -190,7 +190,7 @@ fn down_page(id: &str) -> String {
 /// Where a panel webview should be right now.
 fn panel_target(state: &AppState, id: &str, panel_url: &Url) -> Url {
     match state.panel_state(id) {
-        PanelState::Up | PanelState::Error => lock(&state.last_url)
+        PanelState::Up | PanelState::Error | PanelState::ClientError => lock(&state.last_url)
             .get(id)
             .filter(|u| urls::same_origin(u, panel_url))
             .cloned()
@@ -424,7 +424,12 @@ pub fn sync_panel_windows(app: &AppHandle, state: &AppState) {
         let Ok(current) = w.url() else { continue };
         let st = state.panel_state(id);
         let showing_local = urls::is_app_local(&current);
-        if showing_local && matches!(st, PanelState::Up | PanelState::Error) {
+        if showing_local
+            && matches!(
+                st,
+                PanelState::Up | PanelState::Error | PanelState::ClientError
+            )
+        {
             let target = panel_target(state, id, &panel_url);
             log::info!("panel {:?} is reachable again; showing it", panel.name);
             if let Err(e) = w.navigate(target) {

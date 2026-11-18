@@ -76,6 +76,8 @@ cleanup() {
   [ -n "${APP_PID:-}" ] && kill "$APP_PID" 2>/dev/null
   [ -n "${HTTP_PID:-}" ] && kill "$HTTP_PID" 2>/dev/null
   [ -n "${API_PID:-}" ] && kill "$API_PID" 2>/dev/null
+  [ -n "${ERR_PID:-}" ] && kill "$ERR_PID" 2>/dev/null
+  [ -n "${SHORT_PID:-}" ] && kill "$SHORT_PID" 2>/dev/null
   [ -n "${XVFB_PID:-}" ] && kill "$XVFB_PID" 2>/dev/null
   rm -rf "$WORK"
 }
@@ -88,6 +90,12 @@ HTTP_PID=$!
 # A local program API that answers 401 in plain text (like the cua daemon): not a panel.
 python3 "$ROOT/tests/e2e/api401.py" 62310 >/dev/null 2>&1 &
 API_PID=$!
+# A local program whose start page is an HTML error page (HTTP 400): not a panel (v1.1.1).
+python3 "$ROOT/tests/e2e/status-page.py" 38000 400 >/dev/null 2>&1 &
+ERR_PID=$!
+# A short-lived web page: seen by the scan, gone before "Add" is clicked (v1.1.1).
+python3 "$ROOT/tests/e2e/status-page.py" 38001 200 >/dev/null 2>&1 &
+SHORT_PID=$!
 Xvfb :99 -screen 0 1600x1000x24 >/dev/null 2>&1 &
 XVFB_PID=$!
 export DISPLAY=:99
@@ -121,17 +129,29 @@ check "discovery finds the plain local web server on 8765 (not ticked)" jq -e 'a
 check "discovery skips the socket proxy (no published port)" jq -e 'all(.[]; .url != "http://localhost:2375/")' <<<"$CANDS"
 check "the 401 plain-text API port is listed as skipped (401)" jq -e 'any(.[]; .port == 62310 and .reason == "401")' <<<"$SKIPPED"
 check "whoami (plain text) is listed as skipped, not offered" jq -e 'any(.[]; .port == 8081)' <<<"$SKIPPED"
+check "an HTML 400 start page (38000) is not offered" jq -e 'all(.[]; .url != "http://localhost:38000/")' <<<"$CANDS"
+check "the HTML 400 port is listed as skipped (400)" jq -e 'any(.[]; .port == 38000 and .reason == "400")' <<<"$SKIPPED"
+check "the short-lived 200 page (38001) is offered by the scan" jq -e 'any(.[]; .url == "http://localhost:38001/")' <<<"$CANDS"
 check "the skipped line is shown" grep -q 'true' <<<"$(probe launcher "!!document.querySelector('#find-rows .skip') && document.querySelector('#find-rows .skip').textContent.includes('62310')")"
 shot 01-find-panels-1440 Panelport 1
 
-js launcher "L.find.ticked = {'http://localhost:3552/': true, 'http://localhost:8082/': true}; renderFind(); document.getElementById('find-add').click();"
-sleep 3
+# The short-lived program stops between the scan and the click on Add.
+kill "$SHORT_PID" 2>/dev/null; wait "$SHORT_PID" 2>/dev/null; SHORT_PID=
+for _ in $(seq 1 20); do curl -s -o /dev/null http://localhost:38001/ || break; sleep 0.25; done
+js launcher "L.find.ticked = {'http://localhost:3552/': true, 'http://localhost:8082/': true, 'http://localhost:38001/': true}; renderFind(); document.getElementById('find-add').click();"
+sleep 4
+REFUSED="$(probe launcher "(document.getElementById('find-refused') || {}).textContent || ''")"
+check "a candidate that stopped is not added; Find panels says so ($REFUSED)" grep -q 'localhost:38001 no longer answers with a working web page, so it was not added.' <<<"$REFUSED"
+check "with a candidate refused, the launcher stays on Find panels" test "$(probe launcher "L.view")" = '"find"'
+check "the refused candidate left the list" test "$(probe launcher "L.find.candidates.some(c => c.url.includes('38001'))")" = "false"
+shot 01b-find-refused-1440 Panelport 1
+js launcher "show('panels')"
+sleep 1
 PANELS="$(probe launcher "invoke('list_panels').then(ps => ps.map(p => ({id: p.id, name: p.name, url: p.url, state: p.state})))")"
 echo "$PANELS" > "$OUT/panels.json"
 check "two panels added" jq -e 'length == 2' <<<"$PANELS"
 ARCANE_ID="$(jq -r '.[] | select(.url == "http://localhost:3552/") | .id' <<<"$PANELS")"
 WEB_ID="$(jq -r '.[] | select(.url == "http://localhost:8082/") | .id' <<<"$PANELS")"
-check "after adding, the launcher shows the Panels view" test "$(probe launcher "L.view")" = '"panels"'
 for _ in $(seq 1 20); do
   st="$(probe launcher "invoke('list_panels').then(ps => ps.map(p => p.state).join(','))")"
   [ "$st" = '"up,up"' ] && break
@@ -170,6 +190,20 @@ sleep 2
 STAGE="$(probe launcher "document.querySelector('#stage .meta .state').textContent")"
 check "stage says 'Not a web page / no access' ($STAGE)" grep -q 'Not a web page / no access' <<<"$STAGE"
 probe launcher "invoke('list_panels').then(ps => invoke('save_panels', {panels: ps.filter(p => !p.url.includes('62310')).map(p => ({id: p.id, name: p.name, url: p.url, icon: p.icon, health_path: p.health_path}))})).then(r => r.length)" >/dev/null
+# ---- 2b. An HTML 400 answer is an error, not "running" (v1.1.1) ---------------------------
+probe launcher "invoke('list_panels').then(ps => invoke('save_panels', {panels: ps.map(p => ({id: p.id, name: p.name, url: p.url, icon: p.icon, health_path: p.health_path})).concat([{id: '', name: 'Error page', url: 'http://localhost:38000/', icon: 'monogram', health_path: '/'}])})).then(r => r.length)" >/dev/null
+for _ in $(seq 1 20); do
+  CE="$(probe launcher "invoke('list_panels').then(ps => ps.filter(p => p.url.includes('38000')).map(p => p.state + '|' + p.detail)[0])")"
+  case "$CE" in *client_error*) break ;; esac
+  sleep 1
+done
+check "an HTML 400 panel is in the error state, not running ($CE)" grep -q 'client_error|HTTP 400' <<<"$CE"
+sleep 2
+CEITEM="$(probe launcher "[...document.querySelectorAll('#list .item')].filter(i => i.textContent.includes('Error page')).map(i => i.querySelector('.state').className + '|' + i.querySelector('.state').textContent)[0]")"
+check "list item says 'Error · HTTP 400' in amber ($CEITEM)" grep -q 's-warn.*|Error · HTTP 400' <<<"$CEITEM"
+js launcher "select(L.panels.find(p => p.url.includes('38000')).id)"
+shot 02b-launcher-client-error-1440 Panelport 2
+probe launcher "invoke('list_panels').then(ps => invoke('save_panels', {panels: ps.filter(p => !p.url.includes('38000')).map(p => ({id: p.id, name: p.name, url: p.url, icon: p.icon, health_path: p.health_path}))})).then(r => r.length)" >/dev/null
 check "bundled text inputs opt out of autofill" test "$(probe launcher "[...document.querySelectorAll('input[type=text]')].every(i => i.autocomplete === 'off')")" = "true"
 
 # ---- 3. Settings and Find views ------------------------------------------------------------

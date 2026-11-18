@@ -1,6 +1,6 @@
 [package]
 name = "panelport"
-version = "1.1.0"
+version = "1.1.1"
 description = "Panelport - open your locally hosted web panels as native windows"
 authors = ["thealps01-netizen"]
 license = "MIT"

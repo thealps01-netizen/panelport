@@ -41,6 +41,8 @@ pub enum PanelState {
     Error,
     /// Reachable, but the answer is not a web page (for example an API that wants a key).
     NotPage,
+    /// Reachable, but answering with a client error (HTTP 400, 405, 429 ...).
+    ClientError,
     Down,
 }
 
@@ -197,6 +199,11 @@ impl AppState {
             .get(id)
             .map(|r| r.state)
             .unwrap_or(PanelState::Checking)
+    }
+
+    /// HTTP status of the panel's last answered check.
+    pub fn panel_status(&self, id: &str) -> Option<u16> {
+        lock(&self.runtime).get(id).and_then(|r| r.status)
     }
 
     /// Wakes the monitor loop for an immediate check.

@@ -13,6 +13,8 @@ pub enum Health {
     Error,
     /// Answered, but not with a web page (for example an API answering 401 in plain text).
     NotPage,
+    /// Answered with a client error (4xx other than a login wall), for example HTTP 400.
+    ClientError,
     /// No HTTP answer at all.
     Down,
 }
@@ -101,10 +103,14 @@ pub fn check(url: &Url, timeout: Duration, expect_page: bool) -> Check {
                     .unwrap_or_default();
                 is_html_document(&content_type, &body)
             };
+            // DECISIONS.md 28 and 47: only 2xx/3xx are up; an HTML 401/403 is a login wall (up);
+            // a non-HTML 401/403 is not a web page; any other 4xx is a client error.
             let health = match status {
                 500.. => Health::Error,
                 300..=399 => Health::Up,
-                400..=499 if !html => Health::NotPage,
+                401 | 403 if html => Health::Up,
+                401 | 403 => Health::NotPage,
+                400..=499 => Health::ClientError,
                 200..=299 if expect_page && !html => Health::NotPage,
                 _ => Health::Up,
             };
@@ -354,6 +360,64 @@ mod tests {
         assert_eq!(check_once(r(), false).health, Health::Up);
         // ...but a panel whose start page is JSON is not a web page.
         assert_eq!(check_once(r(), true).health, Health::NotPage);
+    }
+
+    #[test]
+    fn html_4xx_errors_are_client_errors_not_up() {
+        use crate::testutil::response;
+        for status in [
+            "400 Bad Request",
+            "405 Method Not Allowed",
+            "429 Too Many Requests",
+        ] {
+            let code: u16 = status[..3].parse().unwrap();
+            let page = || {
+                response(
+                    status,
+                    "text/html",
+                    "",
+                    "<!doctype html><title>Error</title><h1>Error</h1>",
+                )
+            };
+            for expect_page in [true, false] {
+                let c = check_once(page(), expect_page);
+                assert_eq!(
+                    (c.health.clone(), c.status, c.detail.as_str()),
+                    (
+                        Health::ClientError,
+                        Some(code),
+                        format!("HTTP {code}").as_str()
+                    ),
+                    "{status}, expect_page={expect_page}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn non_html_4xx_other_than_401_403_is_a_client_error() {
+        use crate::testutil::response;
+        let r = response(
+            "400 Bad Request",
+            "application/json",
+            "",
+            r#"{"error":"bad"}"#,
+        );
+        assert_eq!(check_once(r, true).health, Health::ClientError);
+    }
+
+    #[test]
+    fn html_login_walls_401_403_stay_up() {
+        use crate::testutil::response;
+        for status in ["401 Unauthorized", "403 Forbidden"] {
+            let r = response(
+                status,
+                "text/html",
+                "",
+                "<!doctype html><title>Sign in</title>",
+            );
+            assert_eq!(check_once(r, true).health, Health::Up, "{status}");
+        }
     }
 
     #[test]

@@ -52,6 +52,13 @@ pub fn step(
             rt.fails = 0;
             rt.state = PanelState::NotPage;
         }
+        // A client error (HTTP 400, 405, 429 ...) is a definite answer too: set at once, no
+        // notification of its own, and a later outage from it is not announced (it was not
+        // working before), so a short-lived program does not cause "down" toasts.
+        Health::ClientError => {
+            rt.fails = 0;
+            rt.state = PanelState::ClientError;
+        }
         Health::Down => {
             rt.fails += 1;
             // A panel never seen up is shown as down at once (no notification); a panel that
@@ -381,6 +388,45 @@ mod tests {
             None
         );
         assert_eq!(b.state, PanelState::NotPage);
+    }
+
+    #[test]
+    fn client_error_is_its_own_state_set_at_once_and_silent() {
+        let now = Instant::now();
+        let mut a = rt();
+        step(&mut a, Health::Up, Some(200), "".into(), now);
+        assert_eq!(
+            step(
+                &mut a,
+                Health::ClientError,
+                Some(400),
+                "HTTP 400".into(),
+                now
+            ),
+            None
+        );
+        assert_eq!(a.state, PanelState::ClientError);
+        // A panel first seen with a 400 is not "running".
+        let mut b = rt();
+        assert_eq!(
+            step(&mut b, Health::ClientError, Some(400), "".into(), now),
+            None
+        );
+        assert_eq!(b.state, PanelState::ClientError);
+        // After a "down" notification, a 400 phase does not owe or cancel the "back" message.
+        let mut c = rt();
+        step(&mut c, Health::Up, Some(200), "".into(), now);
+        step(&mut c, Health::Down, None, "x".into(), now);
+        step(&mut c, Health::Down, None, "x".into(), now);
+        let later = now + Duration::from_secs(120);
+        assert_eq!(
+            step(&mut c, Health::ClientError, Some(400), "".into(), later),
+            None
+        );
+        assert_eq!(
+            step(&mut c, Health::Up, Some(200), "".into(), later),
+            Some(Transition::CameBack)
+        );
     }
 
     #[test]

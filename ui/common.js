@@ -6,7 +6,7 @@ const STRINGS = {
     panels: "Panels", find: "Find panels", settings: "Settings", addPanel: "Add panel",
     minimize: "Minimize", maximize: "Maximize", restore: "Restore", close: "Close",
     dockerRunning: "Docker Desktop is running", dockerStopped: "Docker is not running", dockerMissing: "Docker is not installed", dockerUnknown: "Checking Docker…",
-    up: "Running", down: "Not reachable", error: "Server error", not_page: "Not a web page / no access", not_page_short: "No access", checking: "Checking…",
+    up: "Running", down: "Not reachable", error: "Server error", not_page: "Not a web page / no access", not_page_short: "No access", client_error: "Error", checking: "Checking…",
     downFor: (d) => `Down · ${d}`,
     listHead: (n, up) => (n === 1 ? `1 panel · ${up} running` : `${n} panels · ${up} running`),
     startContainers: "Start containers", startDocker: "Start Docker Desktop", starting: "Starting…",
@@ -27,7 +27,8 @@ const STRINGS = {
     justNow: "just now", secondsAgo: (n) => `${n} s ago`, minutesAgo: (n) => `${n} min ago`,
     srcTitle: (t) => `Page title “${t}”`, srcDocker: (c) => `Docker container ${c}`, srcLocal: "Local server outside Docker",
     tagKnown: "Already added", tagDocker: "Docker", tagLocal: "Local",
-    skipped: (n, list) => `${n === 1 ? "1 address" : `${n} addresses`} skipped: not a web page (${list}). These are not added as panels.`,
+    skipped: (n, list) => `${n === 1 ? "1 address" : `${n} addresses`} skipped: not a working web page (${list}). These are not added as panels.`,
+    notAdded: (n, list) => (n === 1 ? `${list} no longer answers with a working web page, so it was not added.` : `${list} no longer answer with a working web page, so they were not added.`),
     selected: "Selected",
     willAdd: (n) => (n === 0 ? "Tick the panels you want to add." : n === 1 ? "1 new panel will be added:" : `${n} new panels will be added:`),
     addN: (n) => (n === 0 ? "Add panels" : n === 1 ? "Add 1 panel" : `Add ${n} panels`),
@@ -85,7 +86,7 @@ const STRINGS = {
     panels: "Paneller", find: "Panel bul", settings: "Ayarlar", addPanel: "Panel ekle",
     minimize: "Küçült", maximize: "Büyüt", restore: "Önceki boyut", close: "Kapat",
     dockerRunning: "Docker Desktop çalışıyor", dockerStopped: "Docker çalışmıyor", dockerMissing: "Docker kurulu değil", dockerUnknown: "Docker denetleniyor…",
-    up: "Çalışıyor", down: "Ulaşılamıyor", error: "Sunucu hatası", not_page: "Web sayfası değil / erişim yok", not_page_short: "Erişim yok", checking: "Denetleniyor…",
+    up: "Çalışıyor", down: "Ulaşılamıyor", error: "Sunucu hatası", not_page: "Web sayfası değil / erişim yok", not_page_short: "Erişim yok", client_error: "Hata", checking: "Denetleniyor…",
     downFor: (d) => `Kapalı · ${d}`,
     listHead: (n, up) => `${n} panel · ${up} çalışıyor`,
     startContainers: "Konteyneri başlat", startDocker: "Docker Desktop'ı başlat", starting: "Başlatılıyor…",
@@ -105,7 +106,8 @@ const STRINGS = {
     justNow: "az önce", secondsAgo: (n) => `${n} sn önce`, minutesAgo: (n) => `${n} dk önce`,
     srcTitle: (t) => `Sayfa başlığı “${t}”`, srcDocker: (c) => `Docker konteyneri ${c}`, srcLocal: "Docker dışı yerel sunucu",
     tagKnown: "Zaten ekli", tagDocker: "Docker", tagLocal: "Yerel",
-    skipped: (n, list) => `${n} adres atlandı: web sayfası değil (${list}). Bunlar panel olarak eklenmez.`,
+    skipped: (n, list) => `${n} adres atlandı: çalışan bir web sayfası değil (${list}). Bunlar panel olarak eklenmez.`,
+    notAdded: (n, list) => `${list} artık çalışan bir web sayfasıyla yanıt vermiyor; eklenmedi.`,
     selected: "Seçilenler",
     willAdd: (n) => (n === 0 ? "Eklemek istediğiniz panelleri işaretleyin." : `${n} yeni panel eklenecek:`),
     addN: (n) => (n === 0 ? "Panel ekle" : `${n} paneli ekle`),
@@ -206,7 +208,7 @@ function nameEl(tag, cls, name) {
   return h(tag, { class: cls, lang: nameLang(name), title: name }, name);
 }
 
-const STATE_CLASS = { up: "s-up", down: "s-down", error: "s-warn", not_page: "s-warn", checking: "s-checking" };
+const STATE_CLASS = { up: "s-up", down: "s-down", error: "s-warn", not_page: "s-warn", client_error: "s-warn", checking: "s-checking" };
 function stateEl(state, extra, big) {
   return h("span", { class: `state ${STATE_CLASS[state] || "s-checking"}${big ? " lg" : ""}` }, h("i"), extra || t(state));
 }

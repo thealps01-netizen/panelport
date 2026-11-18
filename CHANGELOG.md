@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.1 — 2026-11-18
+
+### Fixed
+- Find panels offered addresses whose start page was an error page (for example HTTP 400 from a
+  short-lived local program). Only addresses that answer with a working web page (HTTP 2xx and
+  HTML, after same-site redirects such as `/` to `/login`) are offered now; the others are listed
+  as skipped with their status.
+- Adding panels checks each ticked address again first. An address that stopped answering, or now
+  answers with an error, is not added, and Find panels names it in one line.
+- A panel that answers with an HTTP error such as 400, 405 or 429 showed "Running". It now shows
+  "Error · HTTP 400" (Turkish: "Hata · HTTP 400") with an amber dot, sends no notification of its
+  own, and a later outage from that state is not announced. Existing panels are not changed.
+
 ## 1.1.0 — 2026-11-18
 
 ### Changed

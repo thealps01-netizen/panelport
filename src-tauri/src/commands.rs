@@ -275,17 +275,25 @@ pub struct NewPanel {
     url: String,
 }
 
-/// Adds the panels the user ticked in "Find panels".
+#[derive(Serialize)]
+pub struct Added {
+    panels: Vec<PanelView>,
+    /// Addresses (as sent) that no longer answered with a working web page and were not added.
+    refused: Vec<String>,
+}
+
+/// Adds the panels the user ticked in "Find panels". Each one is checked again first: a program
+/// that stopped (or now answers with an error page) since the scan is not added.
 #[tauri::command]
-pub fn add_panels(
+pub async fn add_panels(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
     items: Vec<NewPanel>,
-) -> R<Vec<PanelView>> {
+) -> R<Added> {
     if state.read_only {
         return Err(user_err(&state, E::ReadOnly));
     }
-    let mut added = Vec::new();
+    let mut valid = Vec::new();
     for item in &items {
         let input = PanelInput {
             id: String::new(),
@@ -294,7 +302,35 @@ pub fn add_panels(
             health_path: None,
             icon: IconPref::Favicon,
         };
-        let (name, url, health_path) = validate(&state, &input)?;
+        valid.push((item.url.clone(), validate(&state, &input)?));
+    }
+    let to_check: Vec<String> = valid.iter().map(|(_, (_, url, _))| url.clone()).collect();
+    let n = to_check.len();
+    let ok = tauri::async_runtime::spawn_blocking(move || {
+        std::thread::scope(|s| {
+            let handles: Vec<_> = to_check
+                .iter()
+                .map(|u| s.spawn(move || url::Url::parse(u).is_ok_and(|u| discovery::recheck(&u))))
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap_or(false))
+                .collect::<Vec<bool>>()
+        })
+    })
+    .await
+    .unwrap_or_else(|e| {
+        log::error!("re-checking panels before adding failed: {e}");
+        vec![false; n]
+    });
+    let mut added = Vec::new();
+    let mut refused = Vec::new();
+    for ((sent, (name, url, health_path)), ok) in valid.into_iter().zip(ok) {
+        if !ok {
+            log::info!("not added: {url} no longer answers with a working web page");
+            refused.push(sent);
+            continue;
+        }
         added.push(Panel {
             id: settings::new_id(),
             name,
@@ -314,7 +350,10 @@ pub fn add_panels(
     fetch_icons_later(&app, ids);
     lock(&state.tray_signature).clear();
     state.wake();
-    Ok(views(&state))
+    Ok(Added {
+        panels: views(&state),
+        refused,
+    })
 }
 
 #[tauri::command]

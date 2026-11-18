@@ -279,6 +279,7 @@ body.maximized .caption .restore { display: block; }
 .frow .name:disabled { color: var(--ink-4); }
 .frow .src { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag { font: 600 12px/1 var(--ui); padding: 6px 11px; border-radius: 99px; background: var(--fill-2); white-space: nowrap; justify-self: start; }
+.refused { margin-bottom: 18px; padding: 14px 18px; border-radius: 14px; background: var(--fill); color: var(--ink); font-size: 14px; font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
 .skip { margin-top: 22px; padding: 16px 18px; border-radius: 14px; background: var(--fill); color: var(--ink-3); font-size: 13px; }
 .skip .mono { font-size: 12.5px; }
 .card { border-radius: 18px; padding: 22px; background: var(--fill); box-shadow: inset 0 0 0 1px var(--line); display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }

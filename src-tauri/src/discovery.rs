@@ -157,6 +157,12 @@ enum Outcome {
     Nothing,
 }
 
+/// Re-checks a candidate right before it is added: it must still answer its start page with a
+/// working web page. Returns false for a program that stopped or changed in the meantime.
+pub fn recheck(url: &Url) -> bool {
+    matches!(classify_url(url.clone()), Outcome::Page(_))
+}
+
 #[cfg(test)]
 fn probe(port: u16) -> Option<Probe> {
     match classify(port) {
@@ -168,9 +174,13 @@ fn probe(port: u16) -> Option<Probe> {
 /// Offers a port only when its start page is an HTML document. Same-origin redirects (a web UI
 /// sending `/` to `/login`) are followed up to 3 times; redirects elsewhere are not.
 fn classify(port: u16) -> Outcome {
-    let Ok(mut url) = Url::parse(&format!("http://localhost:{port}/")) else {
-        return Outcome::Nothing;
-    };
+    match Url::parse(&format!("http://localhost:{port}/")) {
+        Ok(url) => classify_url(url),
+        Err(_) => Outcome::Nothing,
+    }
+}
+
+fn classify_url(mut url: Url) -> Outcome {
     for _ in 0..4 {
         let Ok(page) = http::get(&url, Duration::from_millis(1500), 128 * 1024) else {
             return Outcome::Nothing;
@@ -185,12 +195,14 @@ fn classify(port: u16) -> Outcome {
                 _ => return Outcome::Nothing,
             }
         }
-        // 404 at the start page is an API or system endpoint, 5xx is broken; anything else
-        // must be an actual web page (APIs answering 401/403 or JSON are not panels).
+        // 404 at the start page is an API or system endpoint and 5xx is broken: not listed.
+        // Only a working page is a panel: 2xx with an HTML document. Any other answer (an error
+        // page such as 400, 401, 403, 405 or 429, or a 2xx that is not HTML) is listed as skipped.
         if page.status >= 500 || page.status == 404 {
             return Outcome::Nothing;
         }
-        if http::is_html_document(&page.content_type, &page.body) {
+        let ok = (200..300).contains(&page.status);
+        if ok && http::is_html_document(&page.content_type, &page.body) {
             return Outcome::Page(http::html_title(&page.body));
         }
         let ct = page
@@ -200,7 +212,7 @@ fn classify(port: u16) -> Outcome {
             .unwrap_or("")
             .trim()
             .to_string();
-        let reason = if page.status >= 400 {
+        let reason = if !ok {
             page.status.to_string()
         } else if ct.contains("json") {
             "JSON".to_string()
@@ -414,6 +426,67 @@ Etkin Bağlantılar
             .unwrap()
             .port();
         assert_eq!(classify(closed), Outcome::Nothing);
+    }
+
+    #[test]
+    fn html_400_error_page_is_not_offered() {
+        use crate::testutil::{response, serve};
+        // A short-lived local program answering its start page with an HTML error.
+        let port = serve(vec![response(
+            "400 Bad Request",
+            "text/html; charset=utf-8",
+            "",
+            "<!doctype html><title>400 Bad Request</title><h1>Bad Request</h1>",
+        )]);
+        assert!(probe(port).is_none());
+    }
+
+    #[test]
+    fn html_401_and_403_pages_are_not_offered() {
+        use crate::testutil::{response, serve};
+        for status in ["401 Unauthorized", "403 Forbidden"] {
+            let port = serve(vec![response(
+                status,
+                "text/html",
+                "",
+                "<!doctype html><title>Denied</title>",
+            )]);
+            assert!(probe(port).is_none(), "{status}");
+        }
+    }
+
+    #[test]
+    fn recheck_refuses_a_candidate_that_stopped_after_the_scan() {
+        use crate::testutil::{response, serve, serve_n};
+        let page = || {
+            response(
+                "200 OK",
+                "text/html",
+                "",
+                "<!doctype html><title>Short-lived</title>",
+            )
+        };
+        // Answers the scan once, then the program is gone.
+        let gone = serve_n(vec![page()], 1);
+        assert!(probe(gone).is_some(), "the scan saw a web page");
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let url = Url::parse(&format!("http://localhost:{gone}/")).unwrap();
+        assert!(!recheck(&url), "a stopped program is not added");
+        // One that still answers with a web page passes.
+        let alive = serve(vec![page()]);
+        assert!(recheck(
+            &Url::parse(&format!("http://localhost:{alive}/")).unwrap()
+        ));
+        // One that now answers with an error page does not.
+        let broken = serve(vec![response(
+            "400 Bad Request",
+            "text/html",
+            "",
+            "<!doctype html><p>x",
+        )]);
+        assert!(!recheck(
+            &Url::parse(&format!("http://localhost:{broken}/")).unwrap()
+        ));
     }
 
     #[test]

@@ -18,10 +18,16 @@ pub fn response(status: &str, content_type: &str, extra_headers: &str, body: &st
 
 /// Serves the responses in order on a free loopback port and returns the port.
 pub fn serve(responses: Vec<String>) -> u16 {
+    serve_n(responses, 50)
+}
+
+/// Like `serve`, but answers only `n` connections; then the listener closes and the port
+/// refuses connections (a program that stopped).
+pub fn serve_n(responses: Vec<String>, n: usize) -> u16 {
     let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = l.local_addr().unwrap().port();
     std::thread::spawn(move || {
-        for (i, s) in l.incoming().take(50).enumerate() {
+        for (i, s) in l.incoming().take(n).enumerate() {
             let Ok(mut s) = s else { continue };
             let mut buf = [0u8; 2048];
             let _ = s.read(&mut buf);

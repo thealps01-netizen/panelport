@@ -237,3 +237,32 @@ Each entry: the choice, and why. Made without asking the owner, as briefed; revi
     `--self-test` builds a real panel window and checks two webviews, IPC refused to the panel
     origin, password read-back and the caption hit test; the clean-runner job requires all four.
     `scripts/screens-windows.ps1` drives the real WebView2 build on the Windows runner.
+
+## 1.1.1
+
+47. **Only 2xx/3xx count as up; other 4xx is "Error · HTTP n".** Replaces the 4xx line of item 28.
+    Rule per check: 5xx is a server error (as before); a 401/403 with an HTML body is a login wall
+    and counts as **up** (decision below); a 401/403 without HTML stays **not a web page**; every
+    other 4xx (400, 404, 405, 429 ..., HTML or not) is a **client error**, shown as
+    "Error · HTTP 400" / "Hata · HTTP 400". A client error is amber in the list, on the stage and
+    in the tray (degraded, never red), is set on the first such answer (a definite answer, not an
+    outage, so no debounce), sends no notification of its own, and does not count as "was
+    working": an outage that follows it is not announced, so a short-lived local program that
+    answers 400 and then disappears causes no "down" toast. A "back" notification owed after a
+    "down" one is still sent when the panel becomes up, not when it answers with a client error.
+    The panel window keeps showing the panel's own error page (like a 5xx), because it is a real
+    page the user can read; it switches to the status page only when nothing or no web page
+    answers.
+48. **HTML 401/403 is a login wall: up.** A web UI behind a login (a proxy's or a router's sign-in
+    page answering 401/403 with HTML) is working: the user opens it and signs in. Calling it an
+    error would turn such panels amber for good and teach the user to ignore amber. A JSON or
+    plain-text 401/403 still means a program's interface, not a page (item 28). Discovery is
+    stricter (item 49), so such a page is only a panel when the user adds it by address.
+49. **Discovery offers working pages only.** Replaces the status rule of item 29: after same-origin
+    redirects (at most 3, as before) the start page must answer 2xx with an HTML document. 404 and
+    5xx are not listed; every other answer (400, 401, 403, 405, 429, or a 2xx that is not HTML) is
+    listed as skipped with its reason. When the user clicks Add, every ticked address is probed
+    again with the same rule, in parallel and off the UI thread; one that no longer qualifies is
+    not added and leaves the list, and Find panels says so in one line naming the address
+    ("localhost:38001 no longer answers with a working web page, so it was not added."). Existing
+    panels in the settings file are never changed by this rule.

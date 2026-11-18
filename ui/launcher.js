@@ -8,7 +8,7 @@ const L = {
   docker: null,
   previews: {},          // id -> { stamp, url }
   logsFor: null,         // id whose log drawer is open
-  find: { state: "idle", candidates: [], skipped: [], at: 0, names: {}, ticked: {} },
+  find: { state: "idle", candidates: [], skipped: [], refused: [], at: 0, names: {}, ticked: {} },
 };
 
 /* ---- Views ------------------------------------------------------------------------------- */
@@ -51,6 +51,7 @@ function selectedPanel() {
 function stateWord(p, short) {
   if (p.state === "down" && p.since_ms) return t("downFor", since(p.since_ms));
   if (short && p.state === "not_page") return t("not_page_short");
+  if (p.state === "client_error" && p.status) return `${t("client_error")} · HTTP ${p.status}`;
   return t(p.state);
 }
 
@@ -58,7 +59,7 @@ function renderList() {
   const up = L.panels.filter((p) => p.state === "up").length;
   document.getElementById("list-head").textContent = t("listHead", L.panels.length, up);
   const list = document.getElementById("list");
-  const sig = JSON.stringify([L.selected, L.panels.map((p) => [p.id, p.name, p.state, p.can_start, Math.floor((Date.now() - (p.since_ms || 0)) / 60000)])]);
+  const sig = JSON.stringify([L.selected, L.panels.map((p) => [p.id, p.name, p.state, p.status, p.can_start, Math.floor((Date.now() - (p.since_ms || 0)) / 60000)])]);
   if (list.dataset.sig === sig) return;
   list.dataset.sig = sig;
   const hadFocus = list.contains(document.activeElement);
@@ -129,7 +130,7 @@ async function renderStage() {
   }
   stage.classList.remove("hidden");
   const url = await previewUrl(p);
-  const sig = JSON.stringify([p.id, p.name, p.url, p.state, p.latency_ms, p.container, url ? p.preview : 0, L.logsFor === p.id, Math.floor((Date.now() - (p.since_ms || 0)) / 60000)]);
+  const sig = JSON.stringify([p.id, p.name, p.url, p.state, p.status, p.latency_ms, p.container, url ? p.preview : 0, L.logsFor === p.id, Math.floor((Date.now() - (p.since_ms || 0)) / 60000)]);
   if (stage.dataset.sig === sig) return;
   const sameShot = stage.dataset.shot === `${p.id}:${p.preview}` && !!url;
   stage.dataset.sig = sig;
@@ -279,6 +280,7 @@ async function scan() {
     const r = await invoke("discover");
     L.find.candidates = r.candidates;
     L.find.skipped = r.skipped;
+    L.find.refused = [];
     L.find.at = Date.now();
     L.find.state = "done";
     L.find.ticked = {};
@@ -349,6 +351,9 @@ function renderFind() {
   const focusUrl = keepFocus ? keepFocus.dataset.url : null;
   const focusName = document.activeElement && document.activeElement.classList.contains("name");
   rows.replaceChildren(...list);
+  if (L.find.refused.length) {
+    rows.prepend(h("div", { class: "refused", id: "find-refused", role: "status" }, t("notAdded", L.find.refused.length, L.find.refused.join(", "))));
+  }
   if (L.find.skipped.length) {
     const items = L.find.skipped.map((s) => `localhost:${s.port} · ${s.reason}`).join(", ");
     rows.append(h("div", { class: "skip" }, t("skipped", L.find.skipped.length, items)));
@@ -365,9 +370,17 @@ async function addSelected() {
   const items = tickedList().map((c) => ({ name: (L.find.names[c.url] || c.name).trim(), url: c.url }));
   if (!items.length) return;
   try {
-    L.panels = await invoke("add_panels", { items });
-    toast(t("added", items.length));
-    for (const c of L.find.candidates) if (L.find.ticked[c.url]) { c.known = true; L.find.ticked[c.url] = false; }
+    const r = await invoke("add_panels", { items });
+    L.panels = r.panels;
+    const refused = new Set(r.refused);
+    const addedN = items.length - refused.size;
+    if (addedN) toast(t("added", addedN));
+    for (const c of L.find.candidates) if (L.find.ticked[c.url] && !refused.has(c.url)) c.known = true;
+    L.find.ticked = {};
+    // Candidates that no longer qualify leave the list; one plain line on this page names them.
+    L.find.candidates = L.find.candidates.filter((c) => !refused.has(c.url));
+    L.find.refused = r.refused.map(hostPort);
+    if (refused.size) { renderFind(); return; }
     const last = L.panels[L.panels.length - 1];
     if (last) L.selected = last.id;
     renderFind();
