@@ -65,6 +65,7 @@ function render(d) {
   const statusText = p.state === "checking" ? t("checkingNow")
     : p.state === "not_page" ? t("not_page")
     : p.state === "error" ? t("errorTitle")
+    : p.state === "client_error" ? `${t("client_error")}${p.status ? ` · HTTP ${p.status}` : ""}`
     : p.since_ms ? t("downSince", since(p.since_ms, true)) : t("down");
   document.getElementById("status").replaceChildren(stateEl(p.state, statusText, true));
 
