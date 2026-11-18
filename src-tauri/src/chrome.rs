@@ -18,13 +18,24 @@
 pub const BUTTON_W: f64 = 46.0;
 pub const BAR_H: f64 = 44.0;
 
+#[cfg(windows)]
+use tauri::Manager;
 use tauri::Window;
 
 /// Installs the caption-button hit area on `window`; `webview` is the label of the webview that
-/// draws the title bar (it receives the hover and press states).
+/// draws the title bar (it receives the hover and press states). The child window must belong to
+/// the thread that owns the window (the main thread): a child owned by a thread without a
+/// message loop would block the window. Callers on other threads (async commands) are queued.
 #[cfg(windows)]
 pub fn install(window: &Window, webview: &str) {
-    win::install(window, webview)
+    let w = window.clone();
+    let label = webview.to_string();
+    if let Err(e) = window
+        .app_handle()
+        .run_on_main_thread(move || win::install(&w, &label))
+    {
+        log::error!("installing the caption buttons: {e}");
+    }
 }
 
 #[cfg(not(windows))]
@@ -33,7 +44,13 @@ pub fn install(_window: &Window, _webview: &str) {}
 /// Puts the hit area back on top after child webviews were added or resized.
 #[cfg(windows)]
 pub fn raise(window: &Window) {
-    win::raise(window)
+    let w = window.clone();
+    if let Err(e) = window
+        .app_handle()
+        .run_on_main_thread(move || win::raise(&w))
+    {
+        log::warn!("raising the caption buttons: {e}");
+    }
 }
 
 #[cfg(not(windows))]
@@ -223,6 +240,21 @@ mod win {
         }
     }
 
+    /// Runs a script in the title-bar page. Never from inside the window procedure itself: Tauri
+    /// handles calls from the main thread immediately, which would re-enter the event loop while
+    /// Windows is in the middle of a message. A short-lived thread queues it instead.
+    fn eval_later(d: &Data, js: String) {
+        let app = d.app.clone();
+        let label = d.webview.clone();
+        std::thread::spawn(move || {
+            if let Some(w) = app.get_webview(&label) {
+                if let Err(e) = w.eval(js) {
+                    log::warn!("caption state to {label}: {e}");
+                }
+            }
+        });
+    }
+
     /// Tells the title-bar page which button is hovered or pressed.
     fn paint(d: &Data) {
         let js = format!(
@@ -230,18 +262,12 @@ mod win {
             name(if d.pressed != 0 { d.pressed } else { d.hover }),
             if d.pressed != 0 { "press" } else { "hover" }
         );
-        if let Some(w) = d.app.get_webview(&d.webview) {
-            if let Err(e) = w.eval(js) {
-                log::warn!("caption state to {}: {e}", d.webview);
-            }
-        }
+        eval_later(d, js);
     }
 
     fn maximized_to_page(d: &Data) {
         let max = unsafe { IsZoomed(d.parent) }.as_bool();
-        if let Some(w) = d.app.get_webview(&d.webview) {
-            let _ = w.eval(format!("window.__ppMax&&window.__ppMax({max})"));
-        }
+        eval_later(d, format!("window.__ppMax&&window.__ppMax({max})"));
     }
 
     unsafe extern "system" fn parent_proc(

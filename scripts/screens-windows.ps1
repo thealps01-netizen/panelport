@@ -15,6 +15,14 @@ Set-Content $Results ''
 function Pass([string]$m) { Add-Content $Results "PASS $m"; Write-Host "PASS $m" }
 function Fail([string]$m) { Add-Content $Results "FAIL $m"; Write-Host "FAIL $m" }
 function Check([string]$name, [bool]$ok) { if ($ok) { Pass $name } else { Fail $name } }
+# On any unexpected error: keep the app's log for diagnosis, then fail.
+$script:prof = $null
+function SaveLogs([string]$suffix) {
+    if (-not $script:prof) { return }
+    Get-ChildItem (Join-Path $script:prof 'logs') -Filter 'panelport*.log' -ErrorAction SilentlyContinue |
+        ForEach-Object { Copy-Item $_.FullName (Join-Path $OutDir "panelport-$suffix.log") -Force }
+}
+trap { Write-Host "ERROR: $_"; SaveLogs 'error'; exit 1 }
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 Add-Type @"
@@ -82,7 +90,7 @@ function Set-Theme([bool]$light) {
 # ---- Throwaway panels ---------------------------------------------------------------------
 $work = Join-Path $env:RUNNER_TEMP 'pp-screens'
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
-$site = Join-Path $work 'site'; $e2e = Join-Path $work 'e2e'; $prof = Join-Path $work 'profile'
+$site = Join-Path $work 'site'; $e2e = Join-Path $work 'e2e'; $prof = Join-Path $work 'profile'; $script:prof = $prof
 New-Item -ItemType Directory -Force -Path $site, $e2e, (Join-Path $prof 'data') | Out-Null
 Set-Content (Join-Path $site 'index.html') -Encoding utf8 -Value @'
 <!doctype html><html><head><title>Sample panel</title><style>
@@ -195,6 +203,7 @@ Req @{ op = 'open'; id = 'psample' } | Out-Null
 $sample = [IntPtr]::Zero
 for ($i = 0; $i -lt 30 -and $sample -eq [IntPtr]::Zero; $i++) { Start-Sleep 1; $sample = [W]::Find($app.proc.Id, 'Sample panel') }
 Check 'panel window appears' ($sample -ne [IntPtr]::Zero)
+if ($sample -eq [IntPtr]::Zero) { SaveLogs 'error'; throw 'the panel window did not appear' }
 $info = Req @{ op = 'winfo'; label = 'pwin-psample' } | ConvertFrom-Json
 Check "panel window holds two webviews ($($info.webviews -join ','))" ((@($info.webviews) | Sort-Object) -join ',' -eq 'bar-psample,panel-psample')
 Size 'pwin-psample' 1440 900
