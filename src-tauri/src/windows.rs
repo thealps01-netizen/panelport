@@ -45,7 +45,11 @@ fn guarded<'a>(
     let nav_label = label.to_string();
     let new_app = app.clone();
     let new_label = label.to_string();
-    WebviewWindowBuilder::new(app, label, url)
+    let mut builder = WebviewWindowBuilder::new(app, label, url);
+    if let Some(dir) = app.state::<Arc<AppState>>().paths.webview.clone() {
+        builder = builder.data_directory(dir);
+    }
+    builder
         .on_navigation(
             move |target| match urls::decide(target, nav_panel.as_ref()) {
                 Nav::Allow => true,

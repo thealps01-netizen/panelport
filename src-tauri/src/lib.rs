@@ -93,23 +93,38 @@ pub fn run() {
     }
     let autostarted = args.iter().any(|a| a == "--autostart");
     let lang = i18n::detect();
+    // Test profile: separate settings, logs and WebView2 data, and no single-instance lock, so a
+    // check of the installed build never reads or changes the user's own Panelport data.
+    let profile = std::env::var_os("PANELPORT_PROFILE_DIR")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.is_absolute());
 
+    let log_target = match &profile {
+        Some(dir) => TargetKind::Folder {
+            path: dir.join("logs"),
+            file_name: Some("panelport".into()),
+        },
+        None => TargetKind::LogDir {
+            file_name: Some("panelport".into()),
+        },
+    };
     let log_plugin = tauri_plugin_log::Builder::new()
         .clear_targets()
-        .target(Target::new(TargetKind::LogDir {
-            file_name: Some("panelport".into()),
-        }))
+        .target(Target::new(log_target))
         .target(Target::new(TargetKind::Stderr))
         .max_file_size(1_000_000)
         .rotation_strategy(RotationStrategy::KeepSome(3))
         .level(log::LevelFilter::Info)
         .build();
 
-    let app = tauri::Builder::default()
-        // Must be first: a second launch only focuses the running instance.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+    let mut builder = tauri::Builder::default();
+    if profile.is_none() {
+        // Must be the first plugin: a second launch only focuses the running instance.
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             windows::show_launcher(app, false);
-        }))
+        }));
+    }
+    let app = builder
         .plugin(log_plugin)
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -121,9 +136,15 @@ pub fn run() {
         .on_window_event(windows::on_window_event)
         .setup(move |app| {
             install_panic_hook();
-            let data = app.path().app_local_data_dir()?;
-            let logs = app.path().app_log_dir()?;
-            let paths = Paths::new(data, logs);
+            let (data, logs) = match &profile {
+                Some(dir) => (dir.join("data"), dir.join("logs")),
+                None => (app.path().app_local_data_dir()?, app.path().app_log_dir()?),
+            };
+            let mut paths = Paths::new(data, logs);
+            if let Some(dir) = &profile {
+                paths.webview = Some(dir.join("webview"));
+                log::warn!("test profile in use: {}", dir.display());
+            }
             log::info!(
                 "Panelport {} starting (lang {:?}, data {}, autostart {})",
                 env!("CARGO_PKG_VERSION"),

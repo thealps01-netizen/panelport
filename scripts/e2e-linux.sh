@@ -126,6 +126,10 @@ done
 check "both panels report up" test "$st" = '"up,up"'
 shot 02-launcher-healthy Panelport 3
 
+# The Find panels sheet keeps its buttons on screen with a long candidate list.
+FITS="$(probe launcher "(() => { state.candidates = Array.from({length: 25}, (_, i) => ({url: 'http://localhost:' + (9000 + i) + '/', name: 'Test ' + i, port: 9000 + i, container: null, title: null, recommended: false})); renderCandidates(); document.getElementById('find').classList.remove('hidden'); const r = document.getElementById('find-add').getBoundingClientRect(); const ok = r.top >= 0 && r.bottom <= innerHeight; document.getElementById('find').classList.add('hidden'); return ok; })()")"
+check "find sheet buttons stay visible with 25 candidates" test "$FITS" = "true"
+
 # Set Arcane's health path to /api/health through the Settings flow's command.
 probe launcher "invoke('list_panels').then(ps => invoke('save_panels', {panels: ps.map(p => ({id: p.id, name: p.name, url: p.url, icon: p.icon, health_path: p.url.includes('3552') ? '/api/health' : p.health_path}))})).then(r => r.length)" >/dev/null
 check "settings file has schema 1 and the health path" \

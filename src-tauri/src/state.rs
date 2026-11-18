@@ -16,6 +16,8 @@ pub struct Paths {
     pub logs: PathBuf,
     pub settings: PathBuf,
     pub icons: PathBuf,
+    /// WebView2/WebKit data folder; `None` uses Tauri's default inside the app data folder.
+    pub webview: Option<PathBuf>,
 }
 
 impl Paths {
@@ -25,6 +27,7 @@ impl Paths {
             icons: data.join("icons"),
             data,
             logs,
+            webview: None,
         }
     }
 }
