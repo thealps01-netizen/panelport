@@ -41,7 +41,7 @@ fn handle(app: &AppHandle, text: &str) -> String {
     };
     let label = v["label"].as_str().unwrap_or_default();
     match v["op"].as_str().unwrap_or_default() {
-        "eval" => match app.get_webview_window(label) {
+        "eval" => match app.get_webview(label) {
             Some(w) => match w.eval(v["js"].as_str().unwrap_or_default()) {
                 Ok(()) => "ok".into(),
                 Err(e) => format!("error: {e}"),
@@ -49,20 +49,42 @@ fn handle(app: &AppHandle, text: &str) -> String {
             None => "no such window".into(),
         },
         "url" => app
-            .get_webview_window(label)
+            .get_webview(label)
             .and_then(|w| w.url().ok())
             .map(|u| u.to_string())
             .unwrap_or_else(|| "no such window".into()),
-        "labels" => app
-            .webview_windows()
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(","),
+        "labels" => app.webviews().keys().cloned().collect::<Vec<_>>().join(","),
         "open" => match crate::windows::open_panel(app, v["id"].as_str().unwrap_or_default()) {
             Ok(()) => "ok".into(),
             Err(e) => format!("error: {e}"),
         },
+        // Window size in logical pixels (screenshots at fixed sizes).
+        "size" => match app.get_window(label) {
+            Some(w) => {
+                let _ = w.unmaximize();
+                let width = v["w"].as_f64().unwrap_or(1440.0);
+                let height = v["h"].as_f64().unwrap_or(900.0);
+                match w.set_size(tauri::LogicalSize::new(width, height)) {
+                    Ok(()) => {
+                        let _ = w.set_position(tauri::LogicalPosition::new(0.0, 0.0));
+                        "ok".into()
+                    }
+                    Err(e) => format!("error: {e}"),
+                }
+            }
+            None => "no such window".into(),
+        },
+        // A window's webviews and state.
+        "winfo" => match app.get_window(label) {
+            Some(w) => serde_json::json!({
+                "webviews": w.webviews().iter().map(|x| x.label().to_string()).collect::<Vec<_>>(),
+                "maximized": w.is_maximized().unwrap_or(false),
+                "visible": w.is_visible().unwrap_or(false),
+            })
+            .to_string(),
+            None => "no such window".into(),
+        },
+        "windows" => app.windows().keys().cloned().collect::<Vec<_>>().join(","),
         _ => "unknown op".into(),
     }
 }

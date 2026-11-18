@@ -1,13 +1,13 @@
-//! Saved passwords in panel windows.
+//! Saved passwords in panel webviews.
 //!
 //! WebView2 ships with its password manager and form autofill switched off
-//! (`IsPasswordAutosaveEnabled` / `IsGeneralAutofillEnabled` default to false). Panel windows
-//! switch both on so logins typed into a panel can be saved. The data stays in Panelport's own
-//! WebView2 data folder on this PC, encrypted for the Windows user; it is not synced and not
-//! shared with Microsoft Edge. Bundled pages are not changed (their inputs set
-//! `autocomplete="off"`).
+//! (`IsPasswordAutosaveEnabled` / `IsGeneralAutofillEnabled` default to false). Panel webviews
+//! switch both on (unless the user turned "save passwords" off) so logins typed into a panel can
+//! be saved. The data stays in Panelport's own WebView2 data folder on this PC, protected by
+//! WebView2 for the Windows user; it is not synced and not shared with Microsoft Edge. Bundled
+//! pages are not changed (their inputs set `autocomplete="off"`).
 
-use tauri::WebviewWindow;
+use tauri::Webview;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct AutofillState {
@@ -15,38 +15,93 @@ pub struct AutofillState {
     pub general_autofill: bool,
 }
 
-/// Switches password saving and form autofill on for a panel window. Never blocks (it may be
-/// called on the main thread); failures are logged.
-pub fn enable(w: &WebviewWindow) {
+/// Switches password saving and form autofill on for a panel webview. Never blocks.
+pub fn enable(w: &Webview) {
+    set(w, true)
+}
+
+/// Switches password saving and form autofill on or off for a panel webview. Never blocks (it
+/// may be called on the main thread); failures are logged.
+pub fn set(w: &Webview, on: bool) {
     #[cfg(windows)]
     {
         let label = w.label().to_string();
         let res = w.with_webview(move |pv| {
-            // SAFETY: COM calls on the WebView2 controller, made on the UI thread Tauri gives us.
-            if let Err(e) = unsafe { settings_call(&pv, Some(true)) } {
-                log::error!("enabling password saving in {label} failed: {e}");
+            // SAFETY: COM calls on the WebView2 controller, on the UI thread Tauri gives us.
+            if let Err(e) = unsafe { settings_call(&pv, Some(on)) } {
+                log::error!("setting password saving in {label} failed: {e}");
             }
         });
         if let Err(e) = res {
-            log::error!("enabling password saving: {e}");
+            log::error!("setting password saving: {e}");
         }
     }
     #[cfg(not(windows))]
-    let _ = w;
+    let _ = (w, on);
 }
 
 /// Reads the two settings back. Blocks until the UI thread answers, so it must not be called
 /// on the main thread.
 #[cfg(windows)]
-pub fn read_blocking(w: &WebviewWindow) -> Result<AutofillState, String> {
+pub fn read_blocking(w: &Webview) -> Result<AutofillState, String> {
     let (tx, rx) = std::sync::mpsc::channel();
     w.with_webview(move |pv| {
-        // SAFETY: as in `enable`.
+        // SAFETY: as in `set`.
         let _ = tx.send(unsafe { settings_call(&pv, None) });
     })
     .map_err(|e| format!("with_webview: {e}"))?;
     rx.recv_timeout(std::time::Duration::from_secs(15))
         .map_err(|_| "WebView2 did not answer within 15 s".to_string())?
+}
+
+#[cfg(windows)]
+type Done = std::sync::Arc<std::sync::Mutex<Option<Box<dyn FnOnce(Result<(), String>) + Send>>>>;
+
+/// Deletes the passwords WebView2 saved in Panelport's data folder (all panels share it).
+/// `done` gets the outcome. Windows only.
+#[cfg(windows)]
+pub fn clear(w: &Webview, done: impl FnOnce(Result<(), String>) + Send + 'static) {
+    let done: Box<dyn FnOnce(Result<(), String>) + Send> = Box::new(done);
+    let slot: Done = std::sync::Arc::new(std::sync::Mutex::new(Some(done)));
+    let fail = slot.clone();
+    let res = w.with_webview(move |pv| {
+        // SAFETY: as in `set`.
+        if let Err(e) = unsafe { clear_call(&pv, slot) } {
+            if let Some(f) = fail.lock().ok().and_then(|mut d| d.take()) {
+                f(Err(e));
+            }
+        }
+    });
+    if let Err(e) = res {
+        log::error!("deleting saved passwords: {e}");
+    }
+}
+
+#[cfg(windows)]
+unsafe fn clear_call(pv: &tauri::webview::PlatformWebview, done: Done) -> Result<(), String> {
+    use webview2_com::ClearBrowsingDataCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Profile2, ICoreWebView2_13, COREWEBVIEW2_BROWSING_DATA_KINDS_PASSWORD_AUTOSAVE,
+    };
+    use windows_core::Interface;
+    let core: ICoreWebView2_13 = pv
+        .controller()
+        .CoreWebView2()
+        .and_then(|c| c.cast())
+        .map_err(|e| format!("ICoreWebView2_13: {e}"))?;
+    let profile: ICoreWebView2Profile2 = core
+        .Profile()
+        .and_then(|p| p.cast())
+        .map_err(|e| format!("ICoreWebView2Profile2: {e}"))?;
+    let handler = ClearBrowsingDataCompletedHandler::create(Box::new(move |result| {
+        if let Some(f) = done.lock().ok().and_then(|mut d| d.take()) {
+            f(result.map_err(|e| e.to_string()));
+        }
+        Ok(())
+    }));
+    profile
+        .ClearBrowsingData(COREWEBVIEW2_BROWSING_DATA_KINDS_PASSWORD_AUTOSAVE, &handler)
+        .map_err(|e| format!("ClearBrowsingData: {e}"))
 }
 
 #[cfg(windows)]

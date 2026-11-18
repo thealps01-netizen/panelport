@@ -2667,9 +2667,10 @@ dependencies = [
 
 [[package]]
 name = "panelport"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
+ "gtk",
  "log",
  "serde",
  "serde_json",
@@ -2681,11 +2682,14 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tauri-runtime-wry",
  "ureq",
  "url",
  "webview2-com",
+ "windows",
  "windows-core",
  "winreg",
+ "wry",
 ]
 
 [[package]]

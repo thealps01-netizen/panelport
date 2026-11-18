@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 use url::Url;
 
 pub struct Paths {
@@ -53,6 +53,12 @@ pub struct PanelRuntime {
     /// A "down" notification was sent and the matching "back" one is still owed.
     pub down_notified: bool,
     pub last_notified: Option<Instant>,
+    /// Response time of the last check that got an answer.
+    pub latency_ms: Option<u32>,
+    /// When the current state began (wall clock, for "down for 4 min").
+    pub since: Option<SystemTime>,
+    /// Last answer that counted as up: when, HTTP status, response time.
+    pub last_ok: Option<(SystemTime, u16, u32)>,
 }
 
 impl Default for PanelRuntime {
@@ -64,6 +70,9 @@ impl Default for PanelRuntime {
             detail: String::new(),
             down_notified: false,
             last_notified: None,
+            latency_ms: None,
+            since: None,
+            last_ok: None,
         }
     }
 }
@@ -71,6 +80,8 @@ impl Default for PanelRuntime {
 #[derive(Default)]
 pub struct DockerSnap {
     pub engine: Option<Engine>,
+    /// Docker engine version, when the engine answered.
+    pub engine_version: Option<String>,
     pub containers: Vec<Container>,
     pub at: Option<Instant>,
     /// A start (Docker Desktop or containers) is in progress.
@@ -99,6 +110,8 @@ pub struct AppState {
     /// Last in-panel URL per panel, restored when a panel comes back.
     pub last_url: Mutex<HashMap<String, Url>>,
     pub tray_signature: Mutex<String>,
+    /// Last preview capture per panel id (rate limit).
+    pub preview_at: Mutex<HashMap<String, Instant>>,
     wake: (Mutex<bool>, Condvar),
 }
 
@@ -132,6 +145,7 @@ impl AppState {
             docker: Mutex::new(DockerSnap::default()),
             last_url: Mutex::new(HashMap::new()),
             tray_signature: Mutex::new(String::new()),
+            preview_at: Mutex::new(HashMap::new()),
             wake: (Mutex::new(false), Condvar::new()),
         }
     }

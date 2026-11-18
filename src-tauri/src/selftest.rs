@@ -122,14 +122,9 @@ pub fn run(out: Option<&str>, context: tauri::Context<tauri::Wry>) -> i32 {
         false,
     ));
 
-    // A real panel-type WebView2 window: password saving and autofill must read back as on.
-    let (pw_ok, pw_detail) = panel_webview_check(context);
-    checks.push(check(
-        "panel_password_autosave",
-        pw_ok,
-        pw_detail,
-        cfg!(windows),
-    ));
+    // A real panel window (two webviews): IPC refused to the panel, password saving on, and the
+    // caption buttons answering the system's hit test.
+    checks.extend(panel_window_checks(context));
 
     let ok = checks
         .iter()
@@ -157,34 +152,125 @@ pub fn run(out: Option<&str>, context: tauri::Context<tauri::Wry>) -> i32 {
     }
 }
 
-/// Starts a minimal Tauri app with one hidden panel-type window (label `panel-*`, its own
-/// temporary WebView2 data folder), runs the same `passwords::enable` that real panel windows
-/// use, and reads the settings back. Touches no user data.
-#[cfg(windows)]
-fn panel_webview_check(context: tauri::Context<tauri::Wry>) -> (bool, Value) {
+/// Opens a real panel window in a hidden, throwaway Tauri app: the same two-webview window,
+/// capabilities, IPC guard and password setting as the app uses, with a temporary data folder and
+/// a local test page as the panel. Checks that the window holds two webviews, that the panel page
+/// (a remote origin) is refused every command it tries, that password saving reads back as on,
+/// and (Windows) that the caption buttons answer the system's hit test. Touches no user data.
+fn panel_window_checks(context: tauri::Context<tauri::Wry>) -> Vec<Value> {
+    use crate::state::{AppState, Paths};
     use std::sync::{Arc, Mutex};
+
     let dir =
-        std::env::temp_dir().join(format!("panelport-selftest-webview-{}", settings::new_id()));
-    let result: Arc<Mutex<Option<Result<crate::passwords::AutofillState, String>>>> =
-        Arc::new(Mutex::new(None));
+        std::env::temp_dir().join(format!("panelport-selftest-window-{}", settings::new_id()));
+    let failed = |why: String| {
+        vec![
+            check(
+                "panel_window_two_webviews",
+                false,
+                json!({ "error": why.clone() }),
+                true,
+            ),
+            check(
+                "panel_webview_no_ipc",
+                false,
+                json!({ "error": why.clone() }),
+                true,
+            ),
+            check(
+                "panel_password_autosave",
+                false,
+                json!({ "error": why }),
+                cfg!(windows),
+            ),
+        ]
+    };
+    // The panel: a page that tries a title-bar command and an app command and writes the
+    // outcome into its own address (the only channel a page without IPC has).
+    let page = "<!doctype html><title>Panelport self-test panel</title><script>\
+        const t=(c)=>window.__TAURI_INTERNALS__?window.__TAURI_INTERNALS__.invoke(c).then(()=>'ALLOWED',()=>'denied'):Promise.resolve('no-bridge');\
+        Promise.all([t('bar_info'),t('app_info'),t('win_close')]).then(r=>{location.hash='ipc='+r.join(',')});\
+        </script>";
+    let port = match serve_page(page) {
+        Ok(p) => p,
+        Err(e) => return failed(format!("test page server: {e}")),
+    };
+    let url = match url::Url::parse(&format!("http://127.0.0.1:{port}/")) {
+        Ok(u) => u,
+        Err(e) => return failed(e.to_string()),
+    };
+    let mut paths = Paths::new(dir.join("data"), dir.join("logs"));
+    paths.webview = Some(dir.join("webview"));
+    let loaded = settings::load(&paths.settings);
+    let state = Arc::new(AppState::new(paths, crate::i18n::Lang::En, loaded));
+    let _ = state.update(false, |s| {
+        s.panels.push(settings::Panel {
+            id: "pselftest".into(),
+            name: "Self-test".into(),
+            url: url.to_string(),
+            health_path: "/".into(),
+            icon: settings::IconPref::Monogram,
+            geometry: None,
+        });
+        s.prefs.keep_previews = false;
+    });
+
+    let result: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
     let slot = result.clone();
-    let data_dir = dir.clone();
     let app = tauri::Builder::default()
+        .manage(state)
+        .invoke_handler(crate::top_level_guard(crate::handler!()))
         .setup(move |app| {
             let handle = app.handle().clone();
-            let w = tauri::WebviewWindowBuilder::new(
-                app,
-                crate::windows::panel_label("selftest"),
-                tauri::WebviewUrl::External("about:blank".parse().expect("static URL")),
+            let (window, content) = crate::windows::build_panel_window(
+                &handle,
+                "pselftest",
+                "Self-test",
+                tauri::WebviewUrl::External(url.clone()),
+                url.clone(),
+                false,
             )
-            .visible(false)
-            .data_directory(data_dir.clone())
-            .build()?;
-            crate::passwords::enable(&w);
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            crate::passwords::enable(&content);
             std::thread::spawn(move || {
-                // Queued on the UI thread after `enable`, so it reads the applied values.
-                let r = crate::passwords::read_blocking(&w);
-                *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(r);
+                // Wait for the panel page to report its IPC attempts.
+                let mut ipc = String::from("no report");
+                for _ in 0..100 {
+                    std::thread::sleep(Duration::from_millis(200));
+                    if let Some(frag) = content
+                        .url()
+                        .ok()
+                        .and_then(|u| u.fragment().map(String::from))
+                    {
+                        if let Some(r) = frag.strip_prefix("ipc=") {
+                            ipc = r.to_string();
+                            break;
+                        }
+                    }
+                }
+                let labels: Vec<String> = window
+                    .webviews()
+                    .iter()
+                    .map(|w| w.label().to_string())
+                    .collect();
+                #[cfg(windows)]
+                let pw = crate::passwords::read_blocking(&content);
+                #[cfg(not(windows))]
+                let pw: Result<crate::passwords::AutofillState, String> =
+                    Err("WebView2 only; not applicable on this OS".into());
+                #[cfg(windows)]
+                let hits = crate::chrome::probe(&window);
+                #[cfg(not(windows))]
+                let hits: Option<[isize; 3]> = None;
+                *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(json!({
+                    "webviews": labels,
+                    "ipc": ipc,
+                    "password": pw.map(|s| json!({
+                        "IsPasswordAutosaveEnabled": s.password_autosave,
+                        "IsGeneralAutofillEnabled": s.general_autofill,
+                    })).unwrap_or_else(|e| json!({ "error": e })),
+                    "hits": hits,
+                }));
                 handle.exit(0);
             });
             Ok(())
@@ -194,27 +280,76 @@ fn panel_webview_check(context: tauri::Context<tauri::Wry>) -> (bool, Value) {
         Ok(app) => {
             app.run_return(|_, _| {});
         }
-        Err(e) => {
-            *result.lock().unwrap_or_else(|p| p.into_inner()) = Some(Err(format!("tauri: {e}")));
-        }
+        Err(e) => return failed(format!("tauri: {e}")),
     }
     let _ = std::fs::remove_dir_all(&dir);
-    let outcome = result.lock().unwrap_or_else(|p| p.into_inner()).take();
-    match outcome {
-        Some(Ok(s)) => (
-            s.password_autosave && s.general_autofill,
-            json!({
-                "window": "panel-selftest",
-                "IsPasswordAutosaveEnabled": s.password_autosave,
-                "IsGeneralAutofillEnabled": s.general_autofill,
-            }),
+    let Some(r) = result.lock().unwrap_or_else(|p| p.into_inner()).take() else {
+        return failed("the check window never reported".into());
+    };
+
+    let labels = r["webviews"].clone();
+    let two = labels
+        .as_array()
+        .map(|l| {
+            l.len() == 2
+                && l.iter().any(|x| x == "bar-pselftest")
+                && l.iter().any(|x| x == "panel-pselftest")
+        })
+        .unwrap_or(false);
+    let ipc = r["ipc"].as_str().unwrap_or_default().to_string();
+    let ipc_ok = ipc.split(',').count() == 3 && ipc.split(',').all(|x| x == "denied");
+    let pw = r["password"].clone();
+    let pw_ok = pw["IsPasswordAutosaveEnabled"] == true && pw["IsGeneralAutofillEnabled"] == true;
+    let mut out = vec![
+        check(
+            "panel_window_two_webviews",
+            two,
+            json!({ "webviews": labels }),
+            true,
         ),
-        Some(Err(e)) => (false, json!({ "error": e })),
-        None => (false, json!({ "error": "the check window never reported" })),
+        check(
+            "panel_webview_no_ipc",
+            ipc_ok,
+            json!({ "tried": ["bar_info", "app_info", "win_close"], "results": ipc }),
+            true,
+        ),
+        check(
+            "panel_password_autosave",
+            pw_ok,
+            json!({ "webview": "panel-pselftest", "readback": pw }),
+            cfg!(windows),
+        ),
+    ];
+    if cfg!(windows) {
+        // HTMINBUTTON = 8, HTMAXBUTTON = 9 (Snap Layouts), HTCLOSE = 20.
+        let hits = r["hits"].clone();
+        let ok = hits == json!([8, 9, 20]);
+        out.push(check(
+            "caption_buttons_hit_test",
+            ok,
+            json!({ "expected": [8, 9, 20], "got": hits }),
+            true,
+        ));
     }
+    out
 }
 
-#[cfg(not(windows))]
-fn panel_webview_check(_context: tauri::Context<tauri::Wry>) -> (bool, Value) {
-    (false, json!("WebView2 only; not applicable on this OS"))
+/// Serves one HTML page on a free loopback port for the rest of the process.
+fn serve_page(body: &'static str) -> std::io::Result<u16> {
+    use std::io::{Read, Write};
+    let l = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let port = l.local_addr()?.port();
+    std::thread::spawn(move || {
+        for s in l.incoming() {
+            let Ok(mut s) = s else { continue };
+            let mut buf = [0u8; 2048];
+            let _ = s.read(&mut buf);
+            let _ = write!(
+                s,
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    Ok(port)
 }

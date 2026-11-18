@@ -127,6 +127,9 @@ pub enum ErrKind {
     NoContainers,
     Busy,
     LogFolderFailed,
+    LogsFailed,
+    ClearPasswordsFailed,
+    NotSupported,
 }
 
 pub fn err(lang: Lang, e: ErrKind) -> &'static str {
@@ -160,6 +163,12 @@ pub fn err(lang: Lang, e: ErrKind) -> &'static str {
         (Lang::Tr, Busy) => "Panelport zaten bir şeyi başlatıyor. Biraz bekleyip yeniden deneyin.",
         (Lang::En, LogFolderFailed) => "The log folder could not be opened. Open it yourself: {log}",
         (Lang::Tr, LogFolderFailed) => "Günlük klasörü açılamadı. Klasörü kendiniz açın: {log}",
+        (Lang::En, LogsFailed) => "The container's log could not be read. Open Docker Desktop to see it; details are in the log ({log}).",
+        (Lang::Tr, LogsFailed) => "Kapsayıcının günlüğü okunamadı. Görmek için Docker Desktop'ı açın; ayrıntılar günlükte ({log}).",
+        (Lang::En, ClearPasswordsFailed) => "The saved passwords could not be deleted. Quit Panelport and try again; details are in the log ({log}).",
+        (Lang::Tr, ClearPasswordsFailed) => "Kayıtlı şifreler silinemedi. Panelport'tan çıkıp yeniden deneyin; ayrıntılar günlükte ({log}).",
+        (Lang::En, NotSupported) => "This is only available on Windows. Nothing was changed.",
+        (Lang::Tr, NotSupported) => "Bu yalnızca Windows'ta kullanılabilir. Hiçbir şey değiştirilmedi.",
     }
 }
 

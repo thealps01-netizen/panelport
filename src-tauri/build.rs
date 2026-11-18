@@ -1,6 +1,6 @@
 // Registers the app's commands with Tauri's ACL. With an app manifest, every command needs an
-// explicit `allow-<command>` permission; capabilities/local-pages.json grants them to bundled
-// pages only (no `remote` section), so panel origins get none.
+// explicit `allow-<command>` permission; capabilities/local-pages.json and title-bar.json grant
+// them to bundled pages only (no `remote` section), so panel origins get none.
 const COMMANDS: &[&str] = &[
     "app_info",
     "dismiss_notice",
@@ -10,8 +10,7 @@ const COMMANDS: &[&str] = &[
     "mark_discovery_offered",
     "discover",
     "open_panel",
-    "show_settings",
-    "show_launcher",
+    "show_view",
     "panel_detail",
     "start_docker",
     "start_containers",
@@ -20,6 +19,21 @@ const COMMANDS: &[&str] = &[
     "set_autostart",
     "open_log_folder",
     "open_releases",
+    "get_prefs",
+    "set_prefs",
+    "panel_preview",
+    "clear_previews",
+    "clear_saved_passwords",
+    "container_logs",
+    "docker_status",
+    "win_minimize",
+    "win_toggle_maximize",
+    "win_is_maximized",
+    "win_close",
+    "win_start_drag",
+    "bar_info",
+    "bar_reload",
+    "bar_back",
 ];
 
 fn main() {

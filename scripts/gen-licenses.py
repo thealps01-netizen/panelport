@@ -59,6 +59,17 @@ def main():
             fh.write("None of the bundled crates ships a NOTICE file.\n")
         for pkg, text in notices:
             fh.write(f"--- {pkg['name']} {pkg['version']} ---\n{text.rstrip()}\n\n")
+        # Typefaces bundled with the user interface (ui/fonts), SIL Open Font License 1.1.
+        fonts = sorted((ROOT / "ui" / "fonts").glob("*-OFL.txt"))
+        fh.write("\nFONTS\n=====\n\n")
+        fh.write("The interface bundles subsets of these typefaces (ui/fonts/*.woff2), each under the\n"
+                 "SIL Open Font License 1.1. Sources and checksums: ui/fonts/SOURCES.txt.\n\n")
+        for f in fonts:
+            family = {"antonio": "Antonio", "manrope": "Manrope", "jetbrainsmono": "JetBrains Mono"}.get(
+                f.name.split("-OFL")[0], f.name)
+            fh.write(f"--- {family} ---\n{f.read_text(encoding='utf-8').rstrip()}\n\n")
+    if len(fonts) != 3:
+        sys.exit(f"expected 3 font licence files in ui/fonts, found {len(fonts)}")
     size = OUT.stat().st_size
     print(f"wrote {OUT.name}: {size} bytes, {len(notices)} NOTICE file(s)")
     if size < 50_000:

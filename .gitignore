@@ -5,3 +5,9 @@
 # Local test output
 /e2e-out/
 *.log
+# Design working files: mocks contain screenshots of third-party panels; kept local.
+/.impeccable/mocks/
+/.impeccable/questions/
+/.impeccable/decision-payload*.json
+/.impeccable/review/
+/.impeccable/build/

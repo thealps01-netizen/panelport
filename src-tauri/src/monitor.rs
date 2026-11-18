@@ -7,7 +7,7 @@ use crate::http::{self, Health};
 use crate::state::{lock, AppState, PanelRuntime, PanelState};
 use crate::{i18n, tray, urls, windows};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::NotificationExt;
 
@@ -18,6 +18,8 @@ const CHECK_TIMEOUT: Duration = Duration::from_secs(4);
 /// Minimum time between two notifications for the same panel.
 const NOTIFY_COOLDOWN: Duration = Duration::from_secs(60);
 const DOCKER_REFRESH: Duration = Duration::from_secs(10);
+/// How often the Docker engine state shown in the title bar is refreshed while all is well.
+const DOCKER_IDLE_REFRESH: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Transition {
@@ -78,6 +80,20 @@ pub fn step(
     None
 }
 
+/// Records what the screens show besides the state: when the state began, the response time,
+/// and the last answer that counted as up.
+pub fn note(rt: &mut PanelRuntime, before: PanelState, check: &http::Check, wall: SystemTime) {
+    if before != rt.state || rt.since.is_none() {
+        rt.since = Some(wall);
+    }
+    rt.latency_ms = check.latency_ms;
+    if rt.state == PanelState::Up {
+        if let (Some(status), Some(ms)) = (check.status, check.latency_ms) {
+            rt.last_ok = Some((wall, status, ms));
+        }
+    }
+}
+
 pub fn spawn(app: AppHandle) {
     std::thread::Builder::new()
         .name("panel-monitor".into())
@@ -127,6 +143,7 @@ fn cycle(app: &AppHandle, state: &AppState) {
                 check.detail.clone(),
                 now,
             );
+            note(entry, before, &check, SystemTime::now());
             if before != entry.state {
                 log::info!(
                     "panel {:?} ({}) {:?} -> {:?}: {}",
@@ -154,17 +171,37 @@ fn cycle(app: &AppHandle, state: &AppState) {
         }
     }
     // Outside the lock: showing a notification must never stall the commands that read state.
-    for (title, body) in toasts {
-        notify(app, &title, body);
+    if settings.prefs.notify {
+        for (title, body) in toasts {
+            notify(app, &title, body);
+        }
+    } else if !toasts.is_empty() {
+        log::info!(
+            "{} notification(s) not shown: notifications are off",
+            toasts.len()
+        );
     }
 
     if any_local_down {
         refresh_docker(state, false);
+    } else {
+        refresh_docker_idle(state);
     }
     windows::sync_panel_windows(app, state);
+    windows::capture_open_panels(app, state);
     tray::refresh(app, state);
     if let Err(e) = state.flush() {
         log::error!("periodic settings save failed: {e}");
+    }
+}
+
+/// Keeps the title bar's Docker line current while every panel is fine.
+fn refresh_docker_idle(state: &AppState) {
+    let stale = lock(&state.docker)
+        .at
+        .is_none_or(|t| t.elapsed() >= DOCKER_IDLE_REFRESH);
+    if stale {
+        refresh_docker(state, true);
     }
 }
 
@@ -177,7 +214,7 @@ pub fn refresh_docker(state: &AppState, force: bool) {
         }
     }
     let cli = docker::find_cli();
-    let engine = docker::engine(cli.as_ref());
+    let (engine, version) = docker::engine_info(cli.as_ref());
     let containers = match (&cli, &engine) {
         (Some(cli), docker::Engine::Running) => docker::containers(cli).unwrap_or_else(|e| {
             log::warn!("{e}");
@@ -187,6 +224,7 @@ pub fn refresh_docker(state: &AppState, force: bool) {
     };
     let mut d = lock(&state.docker);
     d.engine = Some(engine);
+    d.engine_version = version;
     d.containers = containers;
     d.at = Some(Instant::now());
 }
@@ -277,6 +315,50 @@ mod tests {
         assert_eq!(a.state, PanelState::Down);
         // And since no "down" was sent, no "back" either.
         assert_eq!(step(&mut a, Health::Up, Some(200), "".into(), t2), None);
+    }
+
+    #[test]
+    fn note_tracks_since_latency_and_last_good_answer() {
+        let now = Instant::now();
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+        let t1 = t0 + Duration::from_secs(5);
+        let ok = |ms| http::Check {
+            health: Health::Up,
+            status: Some(200),
+            detail: "HTTP 200".into(),
+            latency_ms: Some(ms),
+        };
+        let down = http::Check {
+            health: Health::Down,
+            status: None,
+            detail: "refused".into(),
+            latency_ms: None,
+        };
+        let mut a = rt();
+        let before = a.state;
+        step(&mut a, Health::Up, Some(200), "".into(), now);
+        note(&mut a, before, &ok(14), t0);
+        assert_eq!(
+            (a.since, a.latency_ms, a.last_ok),
+            (Some(t0), Some(14), Some((t0, 200, 14)))
+        );
+        // Same state later: "since" stays at the start of the state.
+        let before = a.state;
+        step(&mut a, Health::Up, Some(200), "".into(), now);
+        note(&mut a, before, &ok(22), t1);
+        assert_eq!((a.since, a.last_ok), (Some(t0), Some((t1, 200, 22))));
+        // Going down moves "since" and keeps the last good answer.
+        let t2 = t1 + Duration::from_secs(5);
+        for _ in 0..DOWN_AFTER {
+            let before = a.state;
+            step(&mut a, Health::Down, None, "refused".into(), now);
+            note(&mut a, before, &down, t2);
+        }
+        assert_eq!(a.state, PanelState::Down);
+        assert_eq!(
+            (a.since, a.latency_ms, a.last_ok),
+            (Some(t2), None, Some((t1, 200, 22)))
+        );
     }
 
     #[test]

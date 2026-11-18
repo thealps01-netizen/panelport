@@ -1,8 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "local-pages",
-  "description": "Bundled Panelport pages (launcher, settings, and the 'not reachable' page shown inside panel windows). There is deliberately no 'remote' section: panel origins get no IPC access.",
-  "windows": ["launcher", "settings", "panel-*"],
+  "description": "Bundled Panelport pages: the launcher window, and the 'not reachable' page shown inside a panel's content webview (panel-*). There is deliberately no 'remote' section: panel origins get no IPC access. Title-bar webviews (bar-*) have their own, smaller capability.",
+  "windows": ["launcher"],
+  "webviews": ["panel-*"],
   "permissions": [
     "allow-app-info",
     "allow-dismiss-notice",
@@ -12,8 +13,7 @@
     "allow-mark-discovery-offered",
     "allow-discover",
     "allow-open-panel",
-    "allow-show-settings",
-    "allow-show-launcher",
+    "allow-show-view",
     "allow-panel-detail",
     "allow-start-docker",
     "allow-start-containers",
@@ -21,6 +21,18 @@
     "allow-get-autostart",
     "allow-set-autostart",
     "allow-open-log-folder",
-    "allow-open-releases"
+    "allow-open-releases",
+    "allow-get-prefs",
+    "allow-set-prefs",
+    "allow-panel-preview",
+    "allow-clear-previews",
+    "allow-clear-saved-passwords",
+    "allow-container-logs",
+    "allow-docker-status",
+    "allow-win-minimize",
+    "allow-win-toggle-maximize",
+    "allow-win-is-maximized",
+    "allow-win-close",
+    "allow-win-start-drag"
   ]
 }

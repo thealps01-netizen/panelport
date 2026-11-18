@@ -72,6 +72,33 @@ jobs:
             src-tauri/panelport-sbom.cdx.json
           if-no-files-found: error
 
+  screens-windows:
+    name: Screens and title bar on Windows (real WebView2)
+    needs: checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+
+      - name: Build with the test-only e2e harness (not shipped)
+        run: cargo build --locked --features e2e --manifest-path src-tauri/Cargo.toml
+
+      - name: Screens at 1440x900 and 1000x700, title bar checks
+        shell: pwsh
+        run: ./scripts/screens-windows.ps1 -Exe src-tauri/target/debug/panelport.exe -OutDir screens-out
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: screens-windows
+          path: screens-out
+          if-no-files-found: warn
+
   build-windows:
     name: Test and build (Windows)
     needs: checks
@@ -142,7 +169,7 @@ jobs:
   release:
     name: Publish GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [checks, smoke-windows]
+    needs: [checks, smoke-windows, screens-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write

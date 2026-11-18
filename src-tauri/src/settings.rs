@@ -49,6 +49,33 @@ fn default_health_path() -> String {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Prefs {
+    /// Notify when a panel goes down or comes back.
+    #[serde(default = "yes")]
+    pub notify: bool,
+    /// Let panel windows save passwords (WebView2 password manager).
+    #[serde(default = "yes")]
+    pub save_passwords: bool,
+    /// Keep a preview image of each panel for the launcher.
+    #[serde(default = "yes")]
+    pub keep_previews: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Prefs {
+            notify: true,
+            save_passwords: true,
+            keep_previews: true,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub schema: u64,
     #[serde(default)]
@@ -61,6 +88,9 @@ pub struct Settings {
     /// First-run panel discovery was offered.
     #[serde(default)]
     pub discovery_offered: bool,
+    /// Added in 1.1.0 with defaults, so older files load unchanged (schema stays 1).
+    #[serde(default)]
+    pub prefs: Prefs,
 }
 
 impl Default for Settings {
@@ -71,6 +101,7 @@ impl Default for Settings {
             launcher_geometry: None,
             close_hint_shown: false,
             discovery_offered: false,
+            prefs: Prefs::default(),
         }
     }
 }
@@ -341,6 +372,29 @@ mod tests {
         assert!(moved_to.exists());
         assert!(!p.exists());
         assert_eq!(l.settings, Settings::default());
+    }
+
+    #[test]
+    fn v1_0_files_get_default_prefs() {
+        let d = tmpdir("prefs");
+        let p = d.join("settings.json");
+        // A file written by 1.0.x has no "prefs" object.
+        fs::write(&p, r#"{"schema":1,"panels":[],"close_hint_shown":true}"#).unwrap();
+        let l = load(&p);
+        assert_eq!(l.notice, LoadNotice::Loaded);
+        assert_eq!(l.settings.prefs, Prefs::default());
+        assert!(
+            l.settings.prefs.notify
+                && l.settings.prefs.save_passwords
+                && l.settings.prefs.keep_previews
+        );
+        fs::write(&p, r#"{"schema":1,"prefs":{"notify":false}}"#).unwrap();
+        let l = load(&p);
+        assert!(!l.settings.prefs.notify);
+        assert!(
+            l.settings.prefs.save_passwords,
+            "missing keys keep their defaults"
+        );
     }
 
     #[test]

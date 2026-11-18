@@ -1,0 +1,4 @@
+# Subset from github.com/google/fonts (5bd87dfc525c8a0d1d8529d3684716e00c3fc59a); sha256 of the original variable TTFs:
+9e95a2258ecdf3e45c72c5bbea1c4cd350e8f7bebc87c9dba53b29b1890b8903  ./antonio.ttf
+48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda  ./jetbrainsmono.ttf
+3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6  ./manrope.ttf

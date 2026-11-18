@@ -1,8 +1,9 @@
 //! Optional Docker integration through the local `docker` CLI.
 //!
 //! Only these fixed commands are ever run: `docker version`, `docker ps -a -q --no-trunc`,
-//! `docker inspect <id>...` and `docker start <id>`. Container ids always come from Docker's own
-//! output and are validated as hex; nothing a web page sends ends up on a command line.
+//! `docker inspect <id>...`, `docker start <id>` and `docker logs --tail <n> --timestamps <id>`.
+//! Container ids always come from Docker's own output and are validated as hex; nothing a web
+//! page sends ends up on a command line.
 
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -34,6 +35,10 @@ pub struct Container {
     pub depends_on: Vec<String>,
     /// Host ports published on an address this computer can reach (loopback or all interfaces).
     pub ports: Vec<u16>,
+    /// Exit code of the last run, for a stopped container.
+    pub exit_code: Option<i64>,
+    /// When the container last stopped (RFC 3339), for a stopped container.
+    pub finished_at: Option<String>,
 }
 
 pub fn is_container_id(s: &str) -> bool {
@@ -166,15 +171,26 @@ fn run(cli: &PathBuf, args: &[&str], timeout: Duration) -> Result<Output, String
 }
 
 pub fn engine(cli: Option<&PathBuf>) -> Engine {
+    engine_info(cli).0
+}
+
+/// Engine state and, when it answers, its version.
+pub fn engine_info(cli: Option<&PathBuf>) -> (Engine, Option<String>) {
     let Some(cli) = cli else {
-        return Engine::NotInstalled;
+        return (Engine::NotInstalled, None);
     };
-    match run(
+    let engine = match run(
         cli,
         &["version", "--format", "{{.Server.Version}}"],
         Duration::from_secs(8),
     ) {
-        Ok(o) if o.status.success() && !o.stdout.trim_ascii().is_empty() => Engine::Running,
+        Ok(o) if o.status.success() && !o.stdout.trim_ascii().is_empty() => {
+            let v = String::from_utf8_lossy(o.stdout.trim_ascii())
+                .chars()
+                .take(40)
+                .collect();
+            return (Engine::Running, Some(v));
+        }
         Ok(o) => {
             log::info!(
                 "docker engine not answering: {}",
@@ -186,7 +202,78 @@ pub fn engine(cli: Option<&PathBuf>) -> Engine {
             log::warn!("{e}");
             Engine::NotRunning
         }
+    };
+    (engine, None)
+}
+
+/// The container that publishes `port` (the one a panel's address points at).
+pub fn owner(all: &[Container], port: u16) -> Option<&Container> {
+    all.iter().find(|c| c.ports.contains(&port))
+}
+
+/// Last `tail` log lines of a container, oldest first, as `HH:MM:SS message`. Docker writes the
+/// container's stdout and stderr to the CLI's stdout and stderr; both are merged by timestamp.
+pub fn logs(cli: &PathBuf, id: &str, tail: u32) -> Result<Vec<String>, String> {
+    if !is_container_id(id) {
+        return Err(format!("refusing logs for invalid container id {id:?}"));
     }
+    let tail = tail.clamp(1, 500).to_string();
+    let o = run(
+        cli,
+        &["logs", "--tail", &tail, "--timestamps", id],
+        Duration::from_secs(15),
+    )?;
+    if !o.status.success() {
+        return Err(format!(
+            "docker logs failed: {}",
+            String::from_utf8_lossy(&o.stderr).trim()
+        ));
+    }
+    Ok(merge_logs(&o.stdout, &o.stderr, tail.parse().unwrap_or(40)))
+}
+
+/// Removes terminal colour and cursor sequences (`ESC [ ... letter`) that containers often log.
+pub fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for n in chars.by_ref() {
+                    if n.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+pub fn merge_logs(out: &[u8], err: &[u8], keep: usize) -> Vec<String> {
+    let out = strip_ansi(&String::from_utf8_lossy(out));
+    let err = strip_ansi(&String::from_utf8_lossy(err));
+    let mut lines: Vec<(String, String)> = out
+        .lines()
+        .chain(err.lines())
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| match l.split_once(' ') {
+            Some((ts, rest)) if ts.len() >= 19 && ts.as_bytes()[10] == b'T' => {
+                (ts.to_string(), format!("{} {}", &ts[11..19], rest))
+            }
+            _ => (String::new(), l.to_string()),
+        })
+        .collect();
+    lines.sort_by(|a, b| a.0.cmp(&b.0));
+    let skip = lines.len().saturating_sub(keep);
+    lines
+        .into_iter()
+        .skip(skip)
+        .map(|(_, l)| l.chars().take(400).collect())
+        .collect()
 }
 
 /// All containers (running or not) with their published ports.
@@ -287,10 +374,11 @@ pub fn parse_inspect(json: &[u8]) -> Result<Vec<Container>, String> {
             }
         }
         ports.sort_unstable();
+        let running = c["State"]["Running"].as_bool().unwrap_or(false);
         out.push(Container {
             id,
             name,
-            running: c["State"]["Running"].as_bool().unwrap_or(false),
+            running,
             state: c["State"]["Status"]
                 .as_str()
                 .unwrap_or("unknown")
@@ -299,6 +387,15 @@ pub fn parse_inspect(json: &[u8]) -> Result<Vec<Container>, String> {
             service: label("com.docker.compose.service"),
             depends_on,
             ports,
+            exit_code: if running {
+                None
+            } else {
+                c["State"]["ExitCode"].as_i64()
+            },
+            finished_at: c["State"]["FinishedAt"]
+                .as_str()
+                .filter(|t| !running && !t.starts_with("0001-"))
+                .map(String::from),
         });
     }
     Ok(out)
@@ -411,6 +508,51 @@ mod tests {
         let names: Vec<_> = b.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, vec!["arcane-docker-proxy", "arcane"]);
         assert!(backing(&cs, 9999).is_empty());
+    }
+
+    #[test]
+    fn logs_are_merged_by_time_and_trimmed() {
+        let out = b"2026-11-18T14:02:11.100Z SIGTERM received\n2026-11-18T14:02:12.300Z Closed database\n";
+        let err = b"2026-11-18T14:02:11.900Z Shutting down\n\n";
+        assert_eq!(
+            merge_logs(out, err, 10),
+            vec![
+                "14:02:11 SIGTERM received",
+                "14:02:11 Shutting down",
+                "14:02:12 Closed database"
+            ]
+        );
+        assert_eq!(merge_logs(out, err, 1), vec!["14:02:12 Closed database"]);
+        // Lines without a timestamp are kept as they are.
+        assert_eq!(merge_logs(b"plain line\n", b"", 5), vec!["plain line"]);
+        // Terminal colour codes are removed.
+        let coloured =
+            b"2026-11-18T17:10:26.630Z \x1b[2mNov 18\x1b[0m \x1b[92mINF\x1b[0m Incoming request\n";
+        assert_eq!(
+            merge_logs(coloured, b"", 5),
+            vec!["17:10:26 Nov 18 INF Incoming request"]
+        );
+    }
+
+    #[test]
+    fn stopped_container_reports_exit_code_and_stop_time() {
+        let cs = parse_inspect(INSPECT.as_bytes()).unwrap();
+        // The fixture's containers carry no ExitCode/FinishedAt: both stay unknown.
+        assert_eq!(cs[0].exit_code, None);
+        let json = r#"[{"Id":"dddddddddddd4444444444444444444444444444444444444444444444444444","Name":"/kuma",
+            "State":{"Running":false,"Status":"exited","ExitCode":137,"FinishedAt":"2026-11-18T14:02:12.5Z"},
+            "Config":{"Labels":{}},"HostConfig":{"PortBindings":{"3001/tcp":[{"HostIp":"","HostPort":"3001"}]}}}]"#;
+        let c = &parse_inspect(json.as_bytes()).unwrap()[0];
+        assert_eq!(c.exit_code, Some(137));
+        assert_eq!(c.finished_at.as_deref(), Some("2026-11-18T14:02:12.5Z"));
+        assert_eq!(
+            owner(std::slice::from_ref(c), 3001).map(|c| c.name.as_str()),
+            Some("kuma")
+        );
+        assert!(
+            logs(&PathBuf::from("docker"), "--follow", 5).is_err(),
+            "ids are validated"
+        );
     }
 
     #[test]

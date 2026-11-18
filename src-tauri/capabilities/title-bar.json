@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "title-bar",
+  "description": "The bundled title bar (titlebar.html) of a panel window: it may only control its own window and ask for its own panel's name and state. There is deliberately no 'remote' section, and panel content webviews (panel-*) are not listed.",
+  "webviews": ["bar-*"],
+  "permissions": [
+    "allow-bar-info",
+    "allow-bar-reload",
+    "allow-bar-back",
+    "allow-win-minimize",
+    "allow-win-toggle-maximize",
+    "allow-win-is-maximized",
+    "allow-win-close",
+    "allow-win-start-drag"
+  ]
+}

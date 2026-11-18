@@ -7,24 +7,19 @@
   <link rel="icon" href="favicon.ico">
   <link rel="stylesheet" href="app.css">
 </head>
-<body>
-  <div class="down-wrap">
-    <div class="down-card" id="card">
-      <div class="who">
-        <div id="avatar"></div>
-        <div class="minw0">
-          <h2 id="headline"></h2>
-          <div class="mono muted small selectable" id="url"></div>
-        </div>
-      </div>
-      <p class="muted" id="intro"></p>
+<body class="down-page">
+  <main class="downpage" id="down">
+    <section class="minw">
+      <h1 class="big" id="name"></h1>
+      <div class="status" id="status"></div>
+      <p class="lead" id="lead"></p>
+      <div class="actions" id="actions"></div>
+      <div id="error" class="errline hidden" role="alert"></div>
       <div class="steps" id="steps"></div>
-      <div id="message" class="muted small hidden" role="status"></div>
-      <div id="error" class="error-msg hidden" role="alert"></div>
-      <div class="actions-row" id="actions"></div>
-      <div class="retry-line"><div class="spinner"></div><span id="retry"></span></div>
-    </div>
-  </div>
+      <div class="retry"><div class="sweep"></div><span id="retry"></span></div>
+    </section>
+    <aside class="side" id="side"></aside>
+  </main>
   <script src="common.js"></script>
   <script src="down.js"></script>
 </body>

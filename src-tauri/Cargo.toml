@@ -1,6 +1,6 @@
 [package]
 name = "panelport"
-version = "1.0.1"
+version = "1.1.0"
 description = "Panelport - open your locally hosted web panels as native windows"
 authors = ["thealps01-netizen"]
 license = "MIT"
@@ -14,10 +14,14 @@ name = "panelport_lib"
 crate-type = ["rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "=2.7.5", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico"] }
+# Exact pins: panel windows use Tauri's `unstable` multi-webview API (see DECISIONS.md), which
+# may change in any release, so upgrades are deliberate.
+tauri = { version = "=2.12.6", features = ["tray-icon", "image-png", "image-ico", "unstable"] }
+tauri-runtime-wry = "=2.12.4"
+wry = "=0.57.2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-notification = "2"
@@ -33,14 +37,29 @@ base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
-webview2-com = "0.39"
-windows-core = "0.62"
+webview2-com = "=0.39.1"
+windows-core = "=0.62.2"
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Already in the tree through Tauri; used to give the title-bar webview its fixed height on Linux.
+gtk = "=0.18.2"
 
 [dev-dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico", "test"] }
+tauri = { version = "=2.12.6", features = ["tray-icon", "image-png", "image-ico", "unstable", "test"] }
 
 [features]
-# Test-only harness used by scripts/e2e-linux.sh. Never enabled in release builds.
+# Test-only harness used by scripts/e2e-linux.sh and scripts/screens-windows.ps1. Never enabled
+# in release builds.
 e2e = []
 
 [profile.release]

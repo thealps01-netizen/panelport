@@ -78,7 +78,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
-                windows::show_launcher(tray.app_handle(), false);
+                windows::show_launcher(tray.app_handle(), windows::View::Panels);
             }
         })
         .build(app)?;
@@ -155,9 +155,9 @@ fn build_menu(app: &AppHandle, state: &AppState) -> tauri::Result<Menu<tauri::Wr
 fn on_menu(app: &AppHandle, event: MenuEvent) {
     let id = event.id().as_ref();
     match id {
-        "open" => windows::show_launcher(app, false),
-        "find" => windows::show_launcher(app, true),
-        "settings" => windows::show_settings(app),
+        "open" => windows::show_launcher(app, windows::View::Panels),
+        "find" => windows::show_launcher(app, windows::View::Find),
+        "settings" => windows::show_launcher(app, windows::View::Settings),
         "autostart" => {
             let enable = !autostart_enabled(app);
             set_autostart(app, enable);

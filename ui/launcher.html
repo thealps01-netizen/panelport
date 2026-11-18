@@ -9,52 +9,46 @@
 </head>
 <body>
   <div class="app">
-    <header class="topbar">
-      <div class="brand">
-        <img src="img/icon.svg" alt="">
-        <div>
-          <h1>Panelport</h1>
-          <div class="muted small" data-t="tagline">Your local web panels</div>
-        </div>
-      </div>
-      <div class="actions">
-        <button id="btn-find" class="primary"><span data-t="find">Find panels</span></button>
-        <button id="btn-settings" class="ghost icon" data-t-title="settings" title="Settings" aria-label="Settings"></button>
+    <header class="titlebar" id="bar">
+      <span class="mark">Panelport</span>
+      <span class="sep"></span>
+      <nav class="tabs" role="tablist" id="tabs">
+        <button role="tab" id="tab-panels" aria-controls="view-panels" data-view="panels" data-t="panels">Panels</button>
+        <button role="tab" id="tab-find" aria-controls="view-find" data-view="find" data-t="find">Find panels</button>
+        <button role="tab" id="tab-settings" aria-controls="view-settings" data-view="settings" data-t="settings">Settings</button>
+      </nav>
+      <span class="grow"></span>
+      <div class="tools">
+        <span class="dockline" id="dock"><i></i><span></span></span>
+        <button class="pill" id="add-panel" data-t="addPanel">Add panel</button>
       </div>
     </header>
-    <main class="content">
-      <div id="notice" class="banner hidden" role="status"></div>
-      <div id="summary" class="summary"></div>
-      <div id="grid" class="grid" aria-live="polite"></div>
-      <div id="empty" class="empty hidden">
-        <img src="img/icon.svg" alt="">
-        <h2 data-t="emptyTitle">No panels yet</h2>
-        <p class="muted" data-t="emptyText"></p>
-        <div class="row">
-          <button id="empty-find" class="primary" data-t="find">Find panels</button>
-          <button id="empty-add" data-t="addManually">Add by address</button>
-        </div>
-      </div>
-    </main>
-  </div>
 
-  <div id="find" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="find-title">
-    <div class="sheet">
-      <header>
-        <h2 id="find-title" data-t="findTitle">Find panels on this computer</h2>
-        <p class="muted small" data-t="findIntro"></p>
-      </header>
-      <div class="body" id="find-body"></div>
-      <div class="body"><div id="find-error" class="error-msg hidden" role="alert"></div></div>
-      <footer>
-        <button id="find-again" class="ghost" data-t="searchAgain">Search again</button>
-        <span class="grow"></span>
-        <button id="find-cancel" data-t="cancel">Cancel</button>
-        <button id="find-add" class="primary" disabled></button>
-      </footer>
-    </div>
+    <main class="view panels-view hidden" id="view-panels" role="tabpanel" aria-labelledby="tab-panels">
+      <section class="list" aria-label="Panels">
+        <div class="list-head lab" id="list-head"></div>
+        <div class="list-items scroll" id="list" role="listbox" tabindex="0"></div>
+      </section>
+      <div class="stage" id="stage" tabindex="0" role="button"></div>
+      <nav class="rail" id="rail"></nav>
+    </main>
+
+    <main class="view find-view hidden" id="view-find" role="tabpanel" aria-labelledby="tab-find">
+      <section class="find-main">
+        <h1 class="h" id="find-title"></h1>
+        <div class="find-meta" id="find-meta"></div>
+        <div class="rows scroll" id="find-rows"></div>
+      </section>
+      <aside><div class="card" id="find-card"></div></aside>
+    </main>
+
+    <main class="view settings-view hidden" id="view-settings" role="tabpanel" aria-labelledby="tab-settings">
+      <nav class="subnav" id="subnav"></nav>
+      <div class="sections scroll" id="sections"></div>
+    </main>
   </div>
   <script src="common.js"></script>
   <script src="launcher.js"></script>
+  <script src="settings.js"></script>
 </body>
 </html>

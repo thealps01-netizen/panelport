@@ -85,6 +85,16 @@ pub fn same_origin(a: &Url, b: &Url) -> bool {
     a.origin() == b.origin()
 }
 
+/// Navigation rule for the title-bar webview of a panel window: it shows its bundled page and
+/// nothing else, not even through the default browser.
+pub fn decide_bar(target: &Url) -> Nav {
+    if is_app_local(target) && target.path() == "/titlebar.html" {
+        Nav::Allow
+    } else {
+        Nav::Deny
+    }
+}
+
 /// True when the URL points at this computer (only then Docker on this PC can be behind it).
 pub fn is_loopback(url: &Url) -> bool {
     match url.host() {
@@ -238,6 +248,28 @@ mod tests {
             decide(&u("http://evil.example/"), None),
             Nav::External(u("http://evil.example/"))
         );
+    }
+
+    #[test]
+    fn title_bar_cannot_leave_its_page() {
+        assert_eq!(
+            decide_bar(&u("http://tauri.localhost/titlebar.html?x=1")),
+            Nav::Allow
+        );
+        assert_eq!(
+            decide_bar(&u("tauri://localhost/titlebar.html")),
+            Nav::Allow
+        );
+        for t in [
+            "tauri://localhost/launcher.html",
+            "http://tauri.localhost/down.html?panel=a",
+            "http://localhost:3552/",
+            "https://example.com/",
+            "file:///c:/x",
+            "about:blank",
+        ] {
+            assert_eq!(decide_bar(&u(t)), Nav::Deny, "{t}");
+        }
     }
 
     #[test]

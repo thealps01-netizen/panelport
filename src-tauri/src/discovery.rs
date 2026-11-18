@@ -18,6 +18,22 @@ pub struct Candidate {
     pub title: Option<String>,
     /// Pre-ticked in the list (web pages served by a Docker container).
     pub recommended: bool,
+    /// Already one of the user's panels (listed, not offered again).
+    pub known: bool,
+}
+
+/// A port that answered HTTP, but not with a web page (not offered as a panel).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Skipped {
+    pub port: u16,
+    /// Short reason: the HTTP status ("401"), "JSON", or the content type.
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Found {
+    pub candidates: Vec<Candidate>,
+    pub skipped: Vec<Skipped>,
 }
 
 /// Ports where nothing web-like lives (or only Windows system HTTP endpoints such as WinRM);
@@ -132,33 +148,70 @@ struct Probe {
     title: Option<String>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum Outcome {
+    Page(Option<String>),
+    /// Answered HTTP, but not with a web page.
+    NotPage(String),
+    /// No HTTP answer, a broken server, a 404 start page, or a redirect to another site.
+    Nothing,
+}
+
+#[cfg(test)]
+fn probe(port: u16) -> Option<Probe> {
+    match classify(port) {
+        Outcome::Page(title) => Some(Probe { title }),
+        _ => None,
+    }
+}
+
 /// Offers a port only when its start page is an HTML document. Same-origin redirects (a web UI
 /// sending `/` to `/login`) are followed up to 3 times; redirects elsewhere are not.
-fn probe(port: u16) -> Option<Probe> {
-    let mut url = Url::parse(&format!("http://localhost:{port}/")).ok()?;
+fn classify(port: u16) -> Outcome {
+    let Ok(mut url) = Url::parse(&format!("http://localhost:{port}/")) else {
+        return Outcome::Nothing;
+    };
     for _ in 0..4 {
-        let page = http::get(&url, Duration::from_millis(1500), 128 * 1024).ok()?;
+        let Ok(page) = http::get(&url, Duration::from_millis(1500), 128 * 1024) else {
+            return Outcome::Nothing;
+        };
         if (300..400).contains(&page.status) {
-            let next = url.join(page.location.as_deref()?).ok()?;
-            if !crate::urls::same_origin(&next, &url) {
-                return None;
+            let next = page.location.as_deref().and_then(|l| url.join(l).ok());
+            match next {
+                Some(next) if crate::urls::same_origin(&next, &url) => {
+                    url = next;
+                    continue;
+                }
+                _ => return Outcome::Nothing,
             }
-            url = next;
-            continue;
         }
         // 404 at the start page is an API or system endpoint, 5xx is broken; anything else
         // must be an actual web page (APIs answering 401/403 or JSON are not panels).
         if page.status >= 500 || page.status == 404 {
-            return None;
+            return Outcome::Nothing;
         }
-        if !http::is_html_document(&page.content_type, &page.body) {
-            return None;
+        if http::is_html_document(&page.content_type, &page.body) {
+            return Outcome::Page(http::html_title(&page.body));
         }
-        return Some(Probe {
-            title: http::html_title(&page.body),
-        });
+        let ct = page
+            .content_type
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let reason = if page.status >= 400 {
+            page.status.to_string()
+        } else if ct.contains("json") {
+            "JSON".to_string()
+        } else if ct.is_empty() {
+            "?".to_string()
+        } else {
+            ct
+        };
+        return Outcome::NotPage(reason);
     }
-    None
+    Outcome::Nothing
 }
 
 fn pretty(name: &str) -> String {
@@ -169,8 +222,8 @@ fn pretty(name: &str) -> String {
     s
 }
 
-/// Runs the full discovery. `known` are URLs already configured (left out of the result).
-pub fn discover(known: &[Url]) -> Vec<Candidate> {
+/// Runs the full discovery. `known` are URLs already configured (listed with `known: true`).
+pub fn discover(known: &[Url]) -> Found {
     let cli = docker::find_cli();
     let containers: Vec<Container> = match &cli {
         Some(cli) if docker::engine(Some(cli)) == docker::Engine::Running => {
@@ -195,29 +248,35 @@ pub fn discover(known: &[Url]) -> Vec<Candidate> {
         .filter(|u| crate::urls::is_loopback(u))
         .filter_map(|u| u.port_or_known_default())
         .collect();
-    let ports: Vec<(u16, Option<&Container>)> = by_port
-        .into_iter()
-        .filter(|(p, _)| !known_ports.contains(p))
-        .take(MAX_PROBES)
-        .collect();
+    let ports: Vec<(u16, Option<&Container>)> = by_port.into_iter().take(MAX_PROBES).collect();
 
     let mut found = Vec::new();
+    let mut skipped = Vec::new();
     for chunk in ports.chunks(32) {
-        let results: Vec<(u16, Option<&Container>, Option<Probe>)> = std::thread::scope(|s| {
+        let results: Vec<(u16, Option<&Container>, Outcome)> = std::thread::scope(|s| {
             let handles: Vec<_> = chunk
                 .iter()
                 .map(|(p, c)| {
                     let p = *p;
-                    (p, *c, s.spawn(move || probe(p)))
+                    (p, *c, s.spawn(move || classify(p)))
                 })
                 .collect();
             handles
                 .into_iter()
-                .map(|(p, c, h)| (p, c, h.join().ok().flatten()))
+                .map(|(p, c, h)| (p, c, h.join().unwrap_or(Outcome::Nothing)))
                 .collect()
         });
-        for (port, container, probe) in results {
-            let Some(probe) = probe else { continue };
+        for (port, container, outcome) in results {
+            let title = match outcome {
+                Outcome::Page(title) => title,
+                Outcome::NotPage(reason) => {
+                    skipped.push(Skipped { port, reason });
+                    continue;
+                }
+                Outcome::Nothing => continue,
+            };
+            let probe = Probe { title };
+            let known = known_ports.contains(&port);
             let cname = container.map(|c| c.service.clone().unwrap_or_else(|| c.name.clone()));
             let name = match (&probe.title, &cname) {
                 (Some(t), _) if t.chars().count() <= 40 => t.clone(),
@@ -230,12 +289,22 @@ pub fn discover(known: &[Url]) -> Vec<Candidate> {
                 port,
                 container: container.map(|c| c.name.clone()),
                 title: probe.title,
-                recommended: container.is_some(),
+                recommended: container.is_some() && !known,
+                known,
             });
         }
     }
-    found.sort_by(|a, b| b.recommended.cmp(&a.recommended).then(a.port.cmp(&b.port)));
-    found
+    found.sort_by(|a, b| {
+        a.known
+            .cmp(&b.known)
+            .then(b.recommended.cmp(&a.recommended))
+            .then(a.port.cmp(&b.port))
+    });
+    skipped.sort_by_key(|s| s.port);
+    Found {
+        candidates: found,
+        skipped,
+    }
 }
 
 #[cfg(test)]
@@ -311,6 +380,40 @@ Etkin Bağlantılar
             }
         });
         assert!(probe(port).is_none());
+    }
+
+    #[test]
+    fn skipped_ports_say_why() {
+        use crate::testutil::{response, serve};
+        let p401 = serve(vec![response(
+            "401 Unauthorized",
+            "text/plain",
+            "",
+            "missing or wrong daemon token",
+        )]);
+        let pjson = serve(vec![response(
+            "200 OK",
+            "application/json; charset=utf-8",
+            "",
+            "{}",
+        )]);
+        let ptext = serve(vec![response("200 OK", "text/plain", "", "hello")]);
+        let phtml = serve(vec![response(
+            "200 OK",
+            "text/html",
+            "",
+            "<!doctype html><title>T</title>",
+        )]);
+        assert_eq!(classify(p401), Outcome::NotPage("401".into()));
+        assert_eq!(classify(pjson), Outcome::NotPage("JSON".into()));
+        assert_eq!(classify(ptext), Outcome::NotPage("text/plain".into()));
+        assert_eq!(classify(phtml), Outcome::Page(Some("T".into())));
+        let closed = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        assert_eq!(classify(closed), Outcome::Nothing);
     }
 
     #[test]

@@ -33,10 +33,17 @@ if ($p.ExitCode -ne 0) { Fail "self-test exit code $($p.ExitCode)" }
 # Panel windows must have WebView2's password saving and form autofill switched on.
 $st = Get-Content $json -Raw | ConvertFrom-Json
 $pw = $st.checks | Where-Object name -eq 'panel_password_autosave'
-if (-not $pw -or -not $pw.ok -or $pw.detail.IsPasswordAutosaveEnabled -ne $true -or $pw.detail.IsGeneralAutofillEnabled -ne $true) {
-    Fail "panel_password_autosave read-back is not true: $($pw | ConvertTo-Json -Compress)"
+if (-not $pw -or -not $pw.ok -or $pw.detail.readback.IsPasswordAutosaveEnabled -ne $true -or $pw.detail.readback.IsGeneralAutofillEnabled -ne $true) {
+    Fail "panel_password_autosave read-back is not true: $($pw | ConvertTo-Json -Compress -Depth 5)"
 }
-Write-Host "password autosave read-back: IsPasswordAutosaveEnabled=$($pw.detail.IsPasswordAutosaveEnabled) IsGeneralAutofillEnabled=$($pw.detail.IsGeneralAutofillEnabled)"
+Write-Host "password autosave read-back: IsPasswordAutosaveEnabled=$($pw.detail.readback.IsPasswordAutosaveEnabled) IsGeneralAutofillEnabled=$($pw.detail.readback.IsGeneralAutofillEnabled)"
+# Panel windows are two webviews; the panel one is refused every command; the caption buttons
+# answer the system hit test (HTMINBUTTON 8, HTMAXBUTTON 9, HTCLOSE 20).
+foreach ($name in 'panel_window_two_webviews', 'panel_webview_no_ipc', 'caption_buttons_hit_test') {
+    $c = $st.checks | Where-Object name -eq $name
+    if (-not $c -or -not $c.ok) { Fail "$name failed: $($c | ConvertTo-Json -Compress -Depth 5)" }
+    Write-Host "$name ok: $($c.detail | ConvertTo-Json -Compress -Depth 5)"
+}
 
 # 3. Start the real app and wait for its window.
 $app = Start-Process -FilePath $exe.FullName -PassThru

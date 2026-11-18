@@ -23,6 +23,8 @@ pub struct Check {
     pub status: Option<u16>,
     /// Short technical reason for the log ("connection refused", "timeout", ...).
     pub detail: String,
+    /// Time until the response headers arrived (only when there was an answer).
+    pub latency_ms: Option<u32>,
 }
 
 pub struct Page {
@@ -78,8 +80,10 @@ fn describe(e: &ureq::Error) -> String {
 /// only when it is an HTML page (a login or error page of a web UI); a non-HTML 4xx is an API
 /// that wants a key, so the panel is "not a web page".
 pub fn check(url: &Url, timeout: Duration, expect_page: bool) -> Check {
+    let started = std::time::Instant::now();
     match agent(timeout).get(url.as_str()).call() {
         Ok(mut resp) => {
+            let latency_ms = Some(started.elapsed().as_millis().min(u32::MAX as u128) as u32);
             let status = resp.status().as_u16();
             let content_type = resp
                 .headers()
@@ -115,12 +119,14 @@ pub fn check(url: &Url, timeout: Duration, expect_page: bool) -> Check {
                 health,
                 status: Some(status),
                 detail,
+                latency_ms,
             }
         }
         Err(e) => Check {
             health: Health::Down,
             status: None,
             detail: describe(&e),
+            latency_ms: None,
         },
     }
 }

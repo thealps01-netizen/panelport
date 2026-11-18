@@ -1,5 +1,6 @@
 //! Panelport: open locally hosted web panels as native windows.
 
+pub mod chrome;
 pub mod commands;
 pub mod discovery;
 pub mod docker;
@@ -10,6 +11,7 @@ pub mod i18n;
 pub mod icons;
 pub mod monitor;
 pub mod passwords;
+pub mod previews;
 pub mod selftest;
 pub mod settings;
 pub mod state;
@@ -24,34 +26,50 @@ use std::sync::Arc;
 use tauri::{Manager, RunEvent};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 
-/// Every command the bundled pages may call. Each needs an `allow-*` entry in
-/// `capabilities/local-pages.json` and a name in build.rs (a unit test checks both).
+/// Every command a bundled page may call. Each needs an `allow-*` entry in
+/// `capabilities/local-pages.json` or `capabilities/title-bar.json` and a name in build.rs
+/// (unit tests check all three lists).
 macro_rules! handler {
     () => {
         tauri::generate_handler![
-            commands::app_info,
-            commands::dismiss_notice,
-            commands::list_panels,
-            commands::save_panels,
-            commands::add_panels,
-            commands::mark_discovery_offered,
-            commands::discover,
-            commands::open_panel,
-            commands::show_settings,
-            commands::show_launcher,
-            commands::panel_detail,
-            commands::start_docker,
-            commands::start_containers,
-            commands::check_now,
-            commands::get_autostart,
-            commands::set_autostart,
-            commands::open_log_folder,
-            commands::open_releases,
+            $crate::commands::app_info,
+            $crate::commands::dismiss_notice,
+            $crate::commands::list_panels,
+            $crate::commands::save_panels,
+            $crate::commands::add_panels,
+            $crate::commands::mark_discovery_offered,
+            $crate::commands::discover,
+            $crate::commands::open_panel,
+            $crate::commands::show_view,
+            $crate::commands::panel_detail,
+            $crate::commands::start_docker,
+            $crate::commands::start_containers,
+            $crate::commands::check_now,
+            $crate::commands::get_autostart,
+            $crate::commands::set_autostart,
+            $crate::commands::open_log_folder,
+            $crate::commands::open_releases,
+            $crate::commands::get_prefs,
+            $crate::commands::set_prefs,
+            $crate::commands::panel_preview,
+            $crate::commands::clear_previews,
+            $crate::commands::clear_saved_passwords,
+            $crate::commands::container_logs,
+            $crate::commands::docker_status,
+            $crate::commands::win_minimize,
+            $crate::commands::win_toggle_maximize,
+            $crate::commands::win_is_maximized,
+            $crate::commands::win_close,
+            $crate::commands::win_start_drag,
+            $crate::commands::bar_info,
+            $crate::commands::bar_reload,
+            $crate::commands::bar_back,
         ]
     };
 }
+pub(crate) use handler;
 
-/// Second gate after the ACL: a command runs only when the window's top-level page is a bundled
+/// Second gate after the ACL: a command runs only when the webview's top-level page is a bundled
 /// page. The ACL checks the calling frame, so this also stops a bundled page that a panel page
 /// managed to load inside a frame.
 pub fn top_level_guard<R: tauri::Runtime, F>(
@@ -68,7 +86,7 @@ where
             .unwrap_or(false);
         if !local {
             log::warn!(
-                "refused command {:?} from window {}: top-level page is not bundled",
+                "refused command {:?} from webview {}: top-level page is not bundled",
                 invoke.message.command(),
                 webview.label()
             );
@@ -125,7 +143,7 @@ pub fn run() {
     if profile.is_none() {
         // Must be the first plugin: a second launch only focuses the running instance.
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            windows::show_launcher(app, false);
+            windows::show_launcher(app, windows::View::Panels);
         }));
     }
     let app = builder
@@ -183,7 +201,7 @@ pub fn run() {
             #[cfg(feature = "e2e")]
             e2e::spawn(handle.clone());
             if !autostarted {
-                windows::show_launcher(&handle, false);
+                windows::show_launcher(&handle, windows::View::Panels);
             }
             Ok(())
         })
@@ -209,12 +227,14 @@ pub fn run() {
 
 #[cfg(test)]
 mod ipc_security_tests {
-    //! Proves that panel (remote) origins cannot reach any command, while bundled pages can.
+    //! Proves that panel (remote) origins cannot reach any command, that the title-bar webview of
+    //! a panel window reaches only its own commands, and that bundled pages work.
     use super::*;
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{get_ipc_response, mock_builder, INVOKE_KEY};
-    use tauri::webview::InvokeRequest;
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    use tauri::webview::{InvokeRequest, WebviewBuilder};
+    use tauri::window::WindowBuilder;
+    use tauri::{LogicalPosition, LogicalSize, WebviewUrl, WebviewWindowBuilder};
 
     fn test_state() -> Arc<AppState> {
         let dir = std::env::temp_dir().join(format!("panelport-acl-{}", settings::new_id()));
@@ -229,16 +249,26 @@ mod ipc_security_tests {
             callback: CallbackFn(0),
             error: CallbackFn(1),
             url: url.parse().unwrap(),
-            body: InvokeBody::Json(
-                serde_json::json!({ "id": "pabc", "find": false, "enabled": true }),
-            ),
+            body: InvokeBody::Json(serde_json::json!({ "id": "pabc", "view": "panels" })),
             headers: Default::default(),
             invoke_key: INVOKE_KEY.to_string(),
         }
     }
 
-    /// Every command the app registers, plus core and plugin commands a page could try.
-    const ALL_COMMANDS: &[&str] = &[
+    /// Commands the title-bar webview of a panel window may call.
+    const BAR_COMMANDS: &[&str] = &[
+        "bar_info",
+        "bar_reload",
+        "bar_back",
+        "win_minimize",
+        "win_toggle_maximize",
+        "win_is_maximized",
+        "win_close",
+        "win_start_drag",
+    ];
+
+    /// Commands the launcher and the "not reachable" page may call.
+    const LOCAL_COMMANDS: &[&str] = &[
         "app_info",
         "dismiss_notice",
         "list_panels",
@@ -247,8 +277,7 @@ mod ipc_security_tests {
         "mark_discovery_offered",
         "discover",
         "open_panel",
-        "show_settings",
-        "show_launcher",
+        "show_view",
         "panel_detail",
         "start_docker",
         "start_containers",
@@ -257,15 +286,45 @@ mod ipc_security_tests {
         "set_autostart",
         "open_log_folder",
         "open_releases",
+        "get_prefs",
+        "set_prefs",
+        "panel_preview",
+        "clear_previews",
+        "clear_saved_passwords",
+        "container_logs",
+        "docker_status",
+        "win_minimize",
+        "win_toggle_maximize",
+        "win_is_maximized",
+        "win_close",
+        "win_start_drag",
+    ];
+
+    /// Core and plugin commands a page could try.
+    const OTHER_COMMANDS: &[&str] = &[
         "plugin:opener|open_url",
         "plugin:opener|open_path",
         "plugin:autostart|enable",
         "plugin:notification|notify",
         "plugin:window|close",
+        "plugin:window|start_dragging",
         "plugin:webview|create_webview_window",
+        "plugin:webview|set_webview_position",
         "plugin:event|listen",
         "plugin:path|resolve_directory",
     ];
+
+    fn all_commands() -> Vec<&'static str> {
+        let mut v: Vec<&str> = LOCAL_COMMANDS
+            .iter()
+            .chain(BAR_COMMANDS)
+            .chain(OTHER_COMMANDS)
+            .copied()
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    }
 
     const PANEL_ORIGINS: &[&str] = &[
         "http://localhost:3552/",
@@ -276,6 +335,25 @@ mod ipc_security_tests {
         "https://example.com/",
     ];
 
+    /// `get_ipc_response` takes anything that is `AsRef<Webview>`; a plain child webview is not.
+    struct Wv<'a>(&'a tauri::Webview<tauri::test::MockRuntime>);
+    impl AsRef<tauri::Webview<tauri::test::MockRuntime>> for Wv<'_> {
+        fn as_ref(&self) -> &tauri::Webview<tauri::test::MockRuntime> {
+            self.0
+        }
+    }
+
+    fn ipc(
+        w: &tauri::Webview<tauri::test::MockRuntime>,
+        r: InvokeRequest,
+    ) -> Result<tauri::ipc::InvokeResponseBody, serde_json::Value> {
+        get_ipc_response(&Wv(w), r)
+    }
+
+    fn is_refusal(msg: &str) -> bool {
+        msg.contains("not allowed") || msg.contains("remote")
+    }
+
     #[test]
     fn panel_origins_get_no_ipc_but_bundled_pages_do() {
         let state = test_state();
@@ -284,7 +362,9 @@ mod ipc_security_tests {
             .invoke_handler(top_level_guard(tauri::generate_handler![
                 commands::app_info,
                 commands::list_panels,
-                commands::check_now
+                commands::check_now,
+                commands::bar_info,
+                commands::win_is_maximized
             ]))
             .build(tauri::generate_context!(test = true))
             .expect("mock app");
@@ -296,81 +376,108 @@ mod ipc_security_tests {
         )
         .build()
         .unwrap();
-        // A panel window while its panel is down shows the bundled status page...
-        let panel_down = WebviewWindowBuilder::new(
-            &app,
-            windows::panel_label("pabc"),
-            WebviewUrl::App("down.html?panel=pabc".into()),
-        )
-        .build()
-        .unwrap();
-        // ...and the panel itself while it is up.
-        let panel = WebviewWindowBuilder::new(
-            &app,
-            windows::panel_label("pdef"),
-            WebviewUrl::External("http://localhost:3552/".parse().unwrap()),
-        )
-        .build()
-        .unwrap();
+        let launcher = launcher.as_ref().clone();
 
-        // Bundled pages may call commands.
-        for (w, page) in [
-            (&launcher, "launcher.html"),
-            (&panel_down, "down.html?panel=pabc"),
+        // Two panel windows as the app builds them: a title-bar webview over the panel webview.
+        // One shows the panel itself, the other the bundled "not reachable" page.
+        let mut built = Vec::new();
+        for (id, start) in [
+            (
+                "pabc",
+                WebviewUrl::External("http://localhost:3552/".parse().unwrap()),
+            ),
+            ("pdef", WebviewUrl::App("down.html?panel=pdef".into())),
         ] {
-            let local = urls::app_url(page).to_string();
-            let ok = get_ipc_response(w, request("app_info", &local));
-            assert!(
-                ok.is_ok(),
-                "bundled page in {} was refused: {:?}",
-                w.label(),
-                ok.err()
+            let window = WindowBuilder::new(&app, windows::window_label(id))
+                .build()
+                .unwrap();
+            let bar = window
+                .add_child(
+                    WebviewBuilder::new(
+                        windows::bar_label(id),
+                        WebviewUrl::App("titlebar.html".into()),
+                    ),
+                    LogicalPosition::new(0.0, 0.0),
+                    LogicalSize::new(800.0, chrome::BAR_H),
+                )
+                .unwrap();
+            let panel = window
+                .add_child(
+                    WebviewBuilder::new(windows::panel_label(id), start),
+                    LogicalPosition::new(0.0, chrome::BAR_H),
+                    LogicalSize::new(800.0, 556.0),
+                )
+                .unwrap();
+            assert_eq!(
+                window.webviews().len(),
+                2,
+                "panel window holds two webviews"
             );
-            let ok = get_ipc_response(w, request("check_now", &local));
-            assert!(
-                ok.is_ok(),
-                "bundled page in {} was refused: {:?}",
-                w.label(),
-                ok.err()
-            );
+            built.push((bar, panel));
+        }
+        let (bar, panel) = built.remove(0);
+        let (_bar_down, panel_down) = built.remove(0);
+        let bar_url = urls::app_url("titlebar.html").to_string();
+        let down_url = urls::app_url("down.html?panel=pdef").to_string();
+        let launcher_url = urls::app_url("launcher.html").to_string();
+
+        // The launcher and the "not reachable" page may call app commands.
+        for (w, url) in [(&launcher, &launcher_url), (&panel_down, &down_url)] {
+            for cmd in ["app_info", "check_now", "list_panels"] {
+                let ok = ipc(w, request(cmd, url));
+                assert!(ok.is_ok(), "{cmd} refused in {}: {:?}", w.label(), ok.err());
+            }
         }
 
-        // A bundled page framed inside a panel page (call from a local frame, top-level page
-        // remote) is refused by the top-level guard.
-        for cmd in ["app_info", "list_panels", "check_now"] {
-            let res = get_ipc_response(
-                &panel,
-                request(cmd, urls::app_url("launcher.html").as_ref()),
-            );
+        // The title bar may call its own commands and nothing else.
+        for cmd in ["bar_info", "win_is_maximized"] {
+            let ok = ipc(&bar, request(cmd, &bar_url));
+            assert!(ok.is_ok(), "{cmd} refused in the title bar: {:?}", ok.err());
+        }
+        for cmd in all_commands().iter().filter(|c| !BAR_COMMANDS.contains(c)) {
+            let res = ipc(&bar, request(cmd, &bar_url));
+            assert!(res.is_err(), "the title bar could call {cmd}");
+            assert!(is_refusal(&res.unwrap_err().to_string()));
+        }
+
+        // A bundled page framed inside a panel page (local frame, remote top-level page) is
+        // refused by the top-level guard, title-bar commands included.
+        for cmd in [
+            "app_info",
+            "list_panels",
+            "check_now",
+            "bar_info",
+            "win_close",
+        ] {
+            let res = ipc(&panel, request(cmd, &launcher_url));
             assert!(res.is_err(), "framed bundled page could call {cmd}");
             assert!(res.unwrap_err().to_string().contains("not allowed"));
         }
 
-        // Panel origins, in panel windows and anywhere else, get nothing.
+        // Panel origins get nothing, in the panel webview of a two-webview window and anywhere
+        // else: no app command, no title-bar command, no core or plugin command.
+        let cmds = all_commands();
         let mut checked = 0;
-        for w in [&panel, &panel_down, &launcher] {
+        for w in [&panel, &panel_down, &bar, &launcher] {
             for origin in PANEL_ORIGINS {
-                for cmd in ALL_COMMANDS {
-                    let res = get_ipc_response(w, request(cmd, origin));
+                for cmd in &cmds {
+                    let res = ipc(w, request(cmd, origin));
                     assert!(res.is_err(), "{origin} could call {cmd} in {}", w.label());
                     let msg = res.unwrap_err().to_string();
                     assert!(
-                        msg.contains("not allowed") || msg.contains("remote"),
-                        "{origin} -> {cmd}: refused for an unexpected reason: {msg}"
+                        is_refusal(&msg),
+                        "{origin} -> {cmd}: unexpected refusal: {msg}"
                     );
                     checked += 1;
                 }
             }
         }
-        assert_eq!(checked, 3 * PANEL_ORIGINS.len() * ALL_COMMANDS.len());
+        assert_eq!(checked, 4 * PANEL_ORIGINS.len() * cmds.len());
     }
 
-    #[test]
-    fn handler_lists_match_capability() {
-        // Every registered command must be granted in the capability, and nothing else.
-        let cap: serde_json::Value =
-            serde_json::from_str(include_str!("../capabilities/local-pages.json")).unwrap();
-        let mut granted: Vec<String> = cap["permissions"]
+    fn granted(json: &str) -> (serde_json::Value, Vec<String>) {
+        let cap: serde_json::Value = serde_json::from_str(json).unwrap();
+        let mut list: Vec<String> = cap["permissions"]
             .as_array()
             .unwrap()
             .iter()
@@ -381,18 +488,36 @@ mod ipc_security_tests {
                     .replace('-', "_")
             })
             .collect();
-        granted.sort();
-        let mut cmds: Vec<String> = ALL_COMMANDS
-            .iter()
-            .filter(|c| !c.contains(':'))
-            .map(|c| c.to_string())
-            .collect();
-        cmds.sort();
-        assert_eq!(granted, cmds);
-        assert!(
-            cap.get("remote").is_none(),
-            "the capability must not have a remote section"
-        );
+        list.sort();
+        (cap, list)
+    }
+
+    fn sorted(list: &[&str]) -> Vec<String> {
+        let mut v: Vec<String> = list.iter().map(|c| c.to_string()).collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn handler_lists_match_capabilities() {
+        let (local, local_cmds) = granted(include_str!("../capabilities/local-pages.json"));
+        let (bar, bar_cmds) = granted(include_str!("../capabilities/title-bar.json"));
+        assert_eq!(local_cmds, sorted(LOCAL_COMMANDS));
+        assert_eq!(bar_cmds, sorted(BAR_COMMANDS));
+        for cap in [&local, &bar] {
+            assert!(
+                cap.get("remote").is_none(),
+                "a capability must not have a remote section"
+            );
+        }
+        // Who gets what: the launcher window and panel content webviews get the app commands;
+        // only title-bar webviews get the title-bar capability. Panel windows themselves are in
+        // neither list, so a webview in them is matched by its own label only.
+        assert_eq!(local["windows"], serde_json::json!(["launcher"]));
+        assert_eq!(local["webviews"], serde_json::json!(["panel-*"]));
+        assert!(bar.get("windows").is_none());
+        assert_eq!(bar["webviews"], serde_json::json!(["bar-*"]));
+
         let built: Vec<String> = include_str!("../build.rs")
             .split("const COMMANDS: &[&str] = &[")
             .nth(1)
@@ -407,6 +532,10 @@ mod ipc_security_tests {
             .collect();
         let mut built_sorted = built.clone();
         built_sorted.sort();
-        assert_eq!(built_sorted, cmds);
+        let mut all: Vec<String> = sorted(LOCAL_COMMANDS);
+        all.extend(sorted(BAR_COMMANDS));
+        all.sort();
+        all.dedup();
+        assert_eq!(built_sorted, all);
     }
 }
