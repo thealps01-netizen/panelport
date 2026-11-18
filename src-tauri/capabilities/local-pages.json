@@ -1,0 +1,26 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "local-pages",
+  "description": "Bundled Panelport pages (launcher, settings, and the 'not reachable' page shown inside panel windows). There is deliberately no 'remote' section: panel origins get no IPC access.",
+  "windows": ["launcher", "settings", "panel-*"],
+  "permissions": [
+    "allow-app-info",
+    "allow-dismiss-notice",
+    "allow-list-panels",
+    "allow-save-panels",
+    "allow-add-panels",
+    "allow-mark-discovery-offered",
+    "allow-discover",
+    "allow-open-panel",
+    "allow-show-settings",
+    "allow-show-launcher",
+    "allow-panel-detail",
+    "allow-start-docker",
+    "allow-start-containers",
+    "allow-check-now",
+    "allow-get-autostart",
+    "allow-set-autostart",
+    "allow-open-log-folder",
+    "allow-open-releases"
+  ]
+}

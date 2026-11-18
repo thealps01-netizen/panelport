@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panelport Settings</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <img src="img/icon.svg" alt="">
+        <h1 data-t="settings">Settings</h1>
+      </div>
+    </header>
+    <nav class="tabs" role="tablist">
+      <button role="tab" id="tab-panels" aria-selected="true" data-t="tabPanels">Panels</button>
+      <button role="tab" id="tab-general" aria-selected="false" data-t="tabGeneral">General</button>
+      <button role="tab" id="tab-about" aria-selected="false" data-t="tabAbout">About</button>
+    </nav>
+    <main class="content flush">
+      <section id="sec-panels" class="section">
+        <div id="rows"></div>
+        <div class="actions-row">
+          <button id="add-row"><span data-t="addPanel">Add panel</span></button>
+          <button id="find" class="ghost"><span data-t="find">Find panels</span></button>
+        </div>
+      </section>
+      <section id="sec-general" class="section hidden">
+        <div class="toggle-row">
+          <div>
+            <h3 data-t="startWithWindows">Start with Windows</h3>
+            <div class="muted small" data-t="startWithWindowsHint"></div>
+          </div>
+          <label class="switch"><input type="checkbox" id="autostart" aria-labelledby="tab-general"><span></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="minw0">
+            <h3 data-t="logs">Log files</h3>
+            <div class="muted small" data-t="logsHint"></div>
+            <div class="mono muted selectable" id="log-dir"></div>
+          </div>
+          <button id="open-logs" data-t="openLogs">Open log folder</button>
+        </div>
+        <div class="toggle-row">
+          <div class="minw0">
+            <h3 data-t="dataFolder">Settings folder</h3>
+            <div class="mono muted selectable" id="data-dir"></div>
+          </div>
+        </div>
+      </section>
+      <section id="sec-about" class="section hidden">
+        <div class="about">
+          <img src="img/icon.svg" alt="">
+          <div>
+            <h2>Panelport</h2>
+            <div class="muted" id="version"></div>
+            <p data-t="aboutText"></p>
+            <p class="muted" data-t="privacy"></p>
+            <p class="muted small" data-t="license"></p>
+            <button id="releases" class="primary" data-t="releases">Check for new versions</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <div class="section pt0"><div id="error" class="error-msg hidden" role="alert"></div></div>
+    <div class="savebar" id="savebar">
+      <span id="save-status" class="muted small"></span>
+      <span class="grow"></span>
+      <button id="save" class="primary" data-t="save">Save changes</button>
+    </div>
+  </div>
+  <script src="common.js"></script>
+  <script src="settings.js"></script>
+</body>
+</html>

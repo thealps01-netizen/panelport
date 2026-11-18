@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Panelport",
+  "version": "1.0.0",
+  "identifier": "io.github.thealps01-netizen.panelport",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'",
+      "freezePrototype": true,
+      "capabilities": ["local-pages"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "thealps01-netizen",
+    "copyright": "Copyright (c) 2026 thealps01-netizen. MIT License.",
+    "category": "DeveloperTool",
+    "shortDescription": "Open your locally hosted web panels as native windows",
+    "longDescription": "Panelport finds the web panels running on your computer (Docker containers and other local web UIs) and opens each one in its own native window, with live status, tray menu and notifications.",
+    "homepage": "https://github.com/thealps01-netizen/panelport",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../THIRD_PARTY_LICENSES.txt": "THIRD_PARTY_LICENSES.txt",
+      "../LICENSE": "LICENSE.txt"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "languages": ["English", "Turkish"]
+      }
+    }
+  }
+}

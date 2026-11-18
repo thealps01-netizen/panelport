@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panelport</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <img src="img/icon.svg" alt="">
+        <div>
+          <h1>Panelport</h1>
+          <div class="muted small" data-t="tagline">Your local web panels</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="btn-find" class="primary"><span data-t="find">Find panels</span></button>
+        <button id="btn-settings" class="ghost icon" data-t-title="settings" title="Settings" aria-label="Settings"></button>
+      </div>
+    </header>
+    <main class="content">
+      <div id="notice" class="banner hidden" role="status"></div>
+      <div id="summary" class="summary"></div>
+      <div id="grid" class="grid" aria-live="polite"></div>
+      <div id="empty" class="empty hidden">
+        <img src="img/icon.svg" alt="">
+        <h2 data-t="emptyTitle">No panels yet</h2>
+        <p class="muted" data-t="emptyText"></p>
+        <div class="row">
+          <button id="empty-find" class="primary" data-t="find">Find panels</button>
+          <button id="empty-add" data-t="addManually">Add by address</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="find" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="find-title">
+    <div class="sheet">
+      <header>
+        <h2 id="find-title" data-t="findTitle">Find panels on this computer</h2>
+        <p class="muted small" data-t="findIntro"></p>
+      </header>
+      <div class="body" id="find-body"></div>
+      <div class="body"><div id="find-error" class="error-msg hidden" role="alert"></div></div>
+      <footer>
+        <button id="find-again" class="ghost" data-t="searchAgain">Search again</button>
+        <span class="grow"></span>
+        <button id="find-cancel" data-t="cancel">Cancel</button>
+        <button id="find-add" class="primary" disabled></button>
+      </footer>
+    </div>
+  </div>
+  <script src="common.js"></script>
+  <script src="launcher.js"></script>
+</body>
+</html>

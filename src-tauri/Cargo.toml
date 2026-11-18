@@ -1,0 +1,48 @@
+[package]
+name = "panelport"
+version = "1.0.0"
+description = "Panelport - open your locally hosted web panels as native windows"
+authors = ["thealps01-netizen"]
+license = "MIT"
+repository = "https://github.com/thealps01-netizen/panelport"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+[lib]
+name = "panelport_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-log = "2"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = "3"
+url = "2"
+sys-locale = "0.3"
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56"
+
+[dev-dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico", "test"] }
+
+[features]
+# Test-only harness used by scripts/e2e-linux.sh. Never enabled in release builds.
+e2e = []
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "s"
+strip = true

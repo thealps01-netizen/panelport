@@ -1,0 +1,25 @@
+# Disposable panels for scripts/e2e-linux.sh (runs only inside the dev sandbox).
+# Arcane runs in development mode so no secrets are needed; never use this setup for real data.
+name: arcane
+services:
+  docker-socket-proxy:
+    image: wollomatic/socket-proxy:1.13.1
+    container_name: arcane-docker-proxy
+    user: "0:0"
+    command: ["-listenip=0.0.0.0", "-allowfrom=arcane", "-allowhealthcheck", "-allowGET=.*", "-allowHEAD=.*", "-allowPOST=.*", "-allowPUT=.*", "-allowDELETE=.*"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    healthcheck: {test: ["CMD", "./healthcheck"], interval: 2s, timeout: 5s, retries: 15}
+  arcane:
+    image: ghcr.io/getarcaneapp/manager:v3.0.1
+    container_name: arcane
+    ports: ["127.0.0.1:3552:3552"]
+    environment:
+      - ARCANE_APP_URL=http://localhost:3552
+      - ARCANE_ANALYTICS_ENABLED=false
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - ARCANE_ENVIRONMENT=development
+    depends_on: {docker-socket-proxy: {condition: service_healthy}}
+  whoami:
+    image: traefik/whoami:v1.10
+    container_name: test-whoami
+    ports: ["0.0.0.0:8081:80"]
