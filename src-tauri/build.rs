@@ -23,8 +23,22 @@ const COMMANDS: &[&str] = &[
 ];
 
 fn main() {
+    // Tauri normally embeds its Windows manifest only into the app binary, so test binaries
+    // miss the Common Controls v6 dependency and fail to start (STATUS_ENTRYPOINT_NOT_FOUND).
+    // Instead, the same manifest is embedded into every binary through linker arguments.
+    let msvc = std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");
+    let mut windows = tauri_build::WindowsAttributes::new();
+    if msvc {
+        windows = tauri_build::WindowsAttributes::new_without_app_manifest();
+        let manifest = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("windows-app-manifest.xml");
+        println!("cargo:rerun-if-changed=windows-app-manifest.xml");
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+    }
     tauri_build::try_build(
         tauri_build::Attributes::new()
+            .windows_attributes(windows)
             .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),
     )
     .expect("tauri build step failed");
