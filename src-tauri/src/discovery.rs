@@ -20,10 +20,11 @@ pub struct Candidate {
     pub recommended: bool,
 }
 
-/// Ports where nothing web-like lives; probing them only wastes time.
+/// Ports where nothing web-like lives (or only Windows system HTTP endpoints such as WinRM);
+/// probing them only wastes time.
 const SKIP_PORTS: &[u16] = &[
-    22, 25, 53, 110, 135, 139, 143, 445, 1433, 1521, 3306, 3389, 5040, 5353, 5432, 5672, 6379,
-    9200, 11211, 27017,
+    22, 25, 53, 110, 135, 139, 143, 445, 1433, 1521, 3306, 3389, 5040, 5353, 5432, 5672, 5985,
+    5986, 6379, 9200, 11211, 27017, 47001,
 ];
 const MAX_PROBES: usize = 400;
 
@@ -135,7 +136,8 @@ struct Probe {
 fn probe(port: u16) -> Option<Probe> {
     let url = Url::parse(&format!("http://localhost:{port}/")).ok()?;
     let page = http::get(&url, Duration::from_millis(1500), 128 * 1024).ok()?;
-    if page.status >= 500 {
+    // A panel answers its start page; 404 at "/" is an API or system endpoint, 5xx is broken.
+    if page.status >= 500 || page.status == 404 {
         return None;
     }
     let html = page.content_type.contains("html");
@@ -279,6 +281,27 @@ Etkin Bağlantılar
         let p = probe(port).expect("probe");
         assert_eq!(p.title.as_deref(), Some("Test Panel"));
         assert!(p.html);
+    }
+
+    #[test]
+    fn root_404_is_not_a_panel() {
+        use std::io::{Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for s in l.incoming().take(4) {
+                let mut s = s.unwrap();
+                let mut buf = [0u8; 1024];
+                let _ = s.read(&mut buf);
+                let body = "<html><head><title>Not Found</title></head></html>";
+                let _ = write!(
+                    s,
+                    "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            }
+        });
+        assert!(probe(port).is_none());
     }
 
     #[test]
