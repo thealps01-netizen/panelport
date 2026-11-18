@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-18T18:40:00Z",
+  "title": "Design System: Panelport",
+  "extensions": {
+    "colorMeta": {
+      "night-deep": { "role": "neutral", "displayName": "Night Deep", "canonical": "#070d16", "tonalRamp": ["#03060b", "#070d16", "#0b1622", "#0f2236", "#16304a", "#1d4363", "#3a6587", "#8fb0cc"] },
+      "night-mid": { "role": "neutral", "displayName": "Night Mid", "canonical": "#0f2236", "tonalRamp": ["#050c14", "#0a1726", "#0f2236", "#142c45", "#1b3a59", "#2a5175", "#5b7fa0", "#a9c1d6"] },
+      "night-glow": { "role": "neutral", "displayName": "Night Glow", "canonical": "#1d4363", "tonalRamp": ["#0a1826", "#12293f", "#18364f", "#1d4363", "#2b5a80", "#46779e", "#7aa1c2", "#bcd2e4"] },
+      "white": { "role": "primary", "displayName": "Interface White", "canonical": "#ffffff", "tonalRamp": ["rgba(255,255,255,.06)", "rgba(255,255,255,.10)", "rgba(255,255,255,.16)", "rgba(255,255,255,.34)", "rgba(255,255,255,.56)", "rgba(255,255,255,.68)", "rgba(255,255,255,.84)", "#ffffff"] },
+      "ink-on-white": { "role": "primary", "displayName": "Ink on White", "canonical": "#0b1622", "tonalRamp": ["#0b1622", "#1c2836", "#36414e", "#525c68", "#717a84", "#959ca4", "#bcc1c7", "#e3e6e9"] },
+      "state-up": { "role": "tertiary", "displayName": "Running Green", "canonical": "#5ee39a", "tonalRamp": ["#0d3b22", "#127a45", "#1fa862", "#3bc87e", "#5ee39a", "#86ebb3", "#b1f2cd", "#dcf9e8"] },
+      "state-warn": { "role": "tertiary", "displayName": "Attention Amber", "canonical": "#ffc44d", "tonalRamp": ["#3d2a00", "#8a5800", "#b97f00", "#e6a414", "#ffc44d", "#ffd47e", "#ffe4ad", "#fff3dc"] },
+      "state-down": { "role": "tertiary", "displayName": "Down Red", "canonical": "#ff6b6b", "tonalRamp": ["#3d0a0c", "#7e171b", "#b3242c", "#e5484d", "#ff6b6b", "#ff8a8a", "#ffb4b4", "#ffe0e0"] },
+      "mist-light": { "role": "neutral", "displayName": "Mist Light (light mode ground)", "canonical": "#f6f9fc" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The selected or affected panel's name: stage, down page." },
+      "headline": { "displayName": "Headline", "purpose": "View and section headings." },
+      "title": { "displayName": "Title", "purpose": "Panel names in lists." },
+      "body": { "displayName": "Body", "purpose": "Interface copy and leads." },
+      "label": { "displayName": "Label", "purpose": "Labels that head a list or a detail block." },
+      "state": { "displayName": "State", "purpose": "State words beside their dot; 17px on stage and down page." },
+      "mono": { "displayName": "Mono", "purpose": "Ports, addresses, milliseconds, logs." }
+    },
+    "shadows": [
+      { "name": "stage", "value": "0 30px 80px rgba(0,0,0,.55)", "purpose": "The stage only (light mode: 0 30px 70px rgba(37,66,99,.28))." },
+      { "name": "toast", "value": "0 12px 30px rgba(0,0,0,.35)", "purpose": "Transient messages." }
+    ],
+    "motion": [
+      { "name": "ease", "value": "cubic-bezier(.16, 1, .3, 1)", "purpose": "All state transitions; exponential ease-out." },
+      { "name": "settle", "value": "opacity 0→1, scale 1.015→1, .7s", "purpose": "A new preview settling onto the stage." },
+      { "name": "breathe", "value": "opacity/scale pulse, 2s", "purpose": "Ongoing checks and scanning." }
+    ],
+    "breakpoints": [
+      { "name": "narrow-launcher", "value": "1100px" },
+      { "name": "narrow-forms", "value": "960px" },
+      { "name": "stack-down-page", "value": "820px" },
+      { "name": "short", "value": "660px (height)" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Pill Button",
+      "kind": "button",
+      "refersTo": "button-pill",
+      "description": "Every secondary action.",
+      "html": "<button class=\"ds-pill\">Yeniden tara</button>",
+      "css": ".ds-pill{font:600 13.5px/1 Manrope,sans-serif;padding:10px 20px;border-radius:99px;border:1px solid rgba(255,255,255,.34);background:rgba(255,255,255,.06);color:#fff;transition:background .2s cubic-bezier(.16,1,.3,1)}.ds-pill:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.68)}.ds-pill:focus-visible{outline:2px solid #fff;outline-offset:3px}"
+    },
+    {
+      "name": "Solid Button",
+      "kind": "button",
+      "refersTo": "button-solid",
+      "description": "The main action of a card or an empty state.",
+      "html": "<button class=\"ds-solid\">2 paneli ekle</button>",
+      "css": ".ds-solid{font:600 13.5px/1 Manrope,sans-serif;padding:10px 20px;border-radius:99px;border:1px solid #fff;background:#fff;color:#0b1622}.ds-solid:hover{background:rgba(255,255,255,.84)}.ds-solid:focus-visible{outline:2px solid #fff;outline-offset:3px}"
+    },
+    {
+      "name": "Fix Button",
+      "kind": "button",
+      "refersTo": "button-fix",
+      "description": "Only the safe fix for a down panel.",
+      "html": "<button class=\"ds-fix\">Konteyneri başlat</button>",
+      "css": ".ds-fix{font:600 13.5px/1 Manrope,sans-serif;padding:10px 20px;border-radius:99px;border:1px solid #ff6b6b;background:#ff6b6b;color:#1a0505}.ds-fix:hover{filter:brightness(1.06)}"
+    },
+    {
+      "name": "Ring Action",
+      "kind": "custom",
+      "refersTo": "ring-action-primary",
+      "description": "Launcher rail actions; the primary one is filled white.",
+      "html": "<button class=\"ds-ring ds-ring-primary\"><span><svg viewBox=\"0 0 24 24\"><path d=\"M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5\"/></svg></span>Aç</button>",
+      "css": ".ds-ring{display:flex;flex-direction:column;align-items:center;gap:7px;font:500 12px/1.2 Manrope,sans-serif;color:rgba(255,255,255,.84);background:none;border:0}.ds-ring span{width:54px;height:54px;border-radius:50%;border:1px solid rgba(255,255,255,.34);background:rgba(255,255,255,.06);display:grid;place-items:center}.ds-ring svg{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:1.6}.ds-ring-primary span{background:#fff;border-color:#fff}.ds-ring-primary svg{stroke:#0b1622}.ds-ring:hover span{transform:translateY(-1px)}"
+    },
+    {
+      "name": "State",
+      "kind": "chip",
+      "refersTo": "state",
+      "description": "A ringed dot plus the state word in the state's colour.",
+      "html": "<span class=\"ds-state ds-up\"><i></i>Çalışıyor</span> <span class=\"ds-state ds-down\"><i></i>Kapalı · 4 dk</span>",
+      "css": ".ds-state{display:inline-flex;align-items:center;gap:8px;font:600 14px/1.2 Manrope,sans-serif}.ds-state i{width:10px;height:10px;border-radius:50%}.ds-up{color:#5ee39a}.ds-up i{background:#5ee39a;box-shadow:0 0 0 3px rgba(94,227,154,.22)}.ds-down{color:#ff8a8a}.ds-down i{background:#ff6b6b;box-shadow:0 0 0 3px rgba(255,107,107,.22)}"
+    },
+    {
+      "name": "Panel List Item",
+      "kind": "custom",
+      "refersTo": "list-item-selected",
+      "description": "Condensed caps name with its state; selected row filled.",
+      "html": "<div class=\"ds-item\"><span class=\"ds-n\" lang=\"en\">Arcane</span><span class=\"ds-state ds-up\"><i></i>Çalışıyor</span></div>",
+      "css": ".ds-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border-radius:12px;background:rgba(255,255,255,.1);box-shadow:inset 0 0 0 1px rgba(255,255,255,.13);color:#fff}.ds-n{font:300 30px/1 Antonio,sans-serif;letter-spacing:.06em;text-transform:uppercase}"
+    },
+    {
+      "name": "Title Bar",
+      "kind": "nav",
+      "refersTo": "title-bar",
+      "description": "44 px bar on every window with thin caption glyphs; close turns red on hover.",
+      "html": "<div class=\"ds-bar\"><span class=\"ds-mark\">Panelport</span><span class=\"ds-grow\"></span><span class=\"ds-cap\">–</span><span class=\"ds-cap\">□</span><span class=\"ds-cap ds-x\">×</span></div>",
+      "css": ".ds-bar{height:44px;display:flex;align-items:center;gap:18px;padding-left:16px;background:linear-gradient(90deg,#0b1726,#0f2236 60%,#132b44);color:#fff}.ds-mark{font:300 17px/1 Antonio,sans-serif;letter-spacing:.22em;text-transform:uppercase}.ds-grow{flex:1}.ds-cap{width:46px;height:44px;display:grid;place-items:center;font:300 14px Manrope}.ds-cap:hover{background:rgba(255,255,255,.1)}.ds-x:hover{background:#e5484d}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Settings fields.",
+      "html": "<input class=\"ds-input\" value=\"http://localhost:3552\">",
+      "css": ".ds-input{font:500 13px/1.3 'JetBrains Mono',monospace;color:#fff;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.34);border-radius:10px;padding:9px 12px}.ds-input:focus-visible{outline:2px solid #fff;outline-offset:1px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Night Feed",
+    "overview": "Panelport is a quiet night-blue room where one panel at a time owns the stage, the way one item fills a vertical video feed. The selected panel's own picture sits under a dark lower scrim and its name is set huge in thin condensed capitals across the bottom edge; everything else (the list of panels, the ringed actions, the title bar) stays white, thin and out of the way. The category's grey grid of identical status cards is what this world refuses.",
+    "keyCharacteristics": [
+      "A radial night-blue ground with a darker floor; white is the only interface colour.",
+      "Panel names in Antonio caps: huge on the stage and down page, 30 px in lists.",
+      "State shown as a ringed dot plus the state word in the state's colour, never colour alone.",
+      "Hairline white pills and ringed glyph buttons; the primary action is the filled white ring.",
+      "Every window wears the same 44 px title bar with thin white caption glyphs."
+    ],
+    "rules": [
+      { "name": "The State-Only Colour Rule", "body": "Green, amber and red appear only where they mean a panel's state, the fix for it, or an on switch. No decorative colour anywhere else.", "section": "colors" },
+      { "name": "The Words-With-Dots Rule", "body": "A state dot is always followed by the state in words.", "section": "colors" },
+      { "name": "The English Caps Rule", "body": "Uppercased panel names render with lang=\"en\" unless they contain Turkish letters, so names never pick up a dotted capital İ.", "section": "typography" },
+      { "name": "The One Lifted Object Rule", "body": "Only the stage casts a shadow; lists, cards and rows stay flat.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep white the only interface colour and reserve green, amber and red for state.",
+      "Do set panel names in Antonio caps with lang=\"en\" for non-Turkish names.",
+      "Do pair every state dot with the state word, at 14 px or larger.",
+      "Do keep the stage the only shadowed object.",
+      "Do load fonts from the app's own files; nothing from the network."
+    ],
+    "donts": [
+      "Don't add labels above headings; status and scan lines go below their heading.",
+      "Don't introduce a second accent colour or coloured side borders.",
+      "Don't show a live panel inside the launcher; only its stored preview.",
+      "Don't use looping horizontal loaders; a breathing dot marks ongoing checks."
+    ]
+  }
+}

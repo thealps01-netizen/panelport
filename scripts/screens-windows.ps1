@@ -79,6 +79,13 @@ try { Set-DisplayResolution -Width 1920 -Height 1080 -Force -ErrorAction Stop; W
 $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 Write-Host "screen: $($screen.Width)x$($screen.Height)"
 
+# Best effort for the Snap Layouts capture: the flyout setting may be off on server images.
+try {
+    $adv = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+    Set-ItemProperty -Path $adv -Name EnableSnapAssistFlyout -Value 1 -Type DWord -ErrorAction Stop
+    Set-ItemProperty -Path $adv -Name EnableSnapBar -Value 1 -Type DWord -ErrorAction SilentlyContinue
+} catch { Write-Host "snap layout setting not changed: $($_.Exception.Message)" }
+
 function Set-Theme([bool]$light) {
     $k = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
     if (-not (Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
@@ -221,7 +228,9 @@ $code = [W]::SendMessage($hit, 0x84, [IntPtr]::Zero, [IntPtr](($pt[1] -shl 16) -
 Add-Content (Join-Path $OutDir 'hit-test.txt') "panel window maximize button: window class $cls, WM_NCHITTEST = $code"
 Check "window under the maximize glyph is the caption hit area ($cls)" ($cls -eq 'PANELPORT_CAPTION_BUTTONS')
 Check "WM_NCHITTEST over the maximize glyph answers HTMAXBUTTON (got $code)" ($code -eq 9)
-[W]::SetCursorPos($pt[0], $pt[1]) | Out-Null
+[W]::SetCursorPos($pt[0] - 6, $pt[1] - 4) | Out-Null
+Start-Sleep -Milliseconds 300
+for ($i = 0; $i -lt 6; $i++) { [W]::SetCursorPos($pt[0] + ($i % 2), $pt[1]) | Out-Null; Start-Sleep -Milliseconds 150 }
 Start-Sleep -Milliseconds 2500
 ScreenShot 'win-snap-layouts-hover'
 [W]::Click($pt[0] + 60, $pt[1] + 300, 1) | Out-Null   # move away and dismiss a flyout, if any

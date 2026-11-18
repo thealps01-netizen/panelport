@@ -164,7 +164,11 @@ done
 check "a 401 plain-text panel is shown as not a web page ($NP)" grep -q 'not_page|HTTP 401, text/plain' <<<"$NP"
 sleep 2
 ITEM="$(probe launcher "[...document.querySelectorAll('#list .item')].filter(i => i.textContent.includes('Daemon')).map(i => i.querySelector('.state').textContent)[0]")"
-check "list item says 'Not a web page / no access' ($ITEM)" grep -q 'Not a web page / no access' <<<"$ITEM"
+check "list item says 'No access' ($ITEM)" grep -q 'No access' <<<"$ITEM"
+js launcher "select(L.panels.find(p => p.url.includes('62310')).id)"
+sleep 2
+STAGE="$(probe launcher "document.querySelector('#stage .meta .state').textContent")"
+check "stage says 'Not a web page / no access' ($STAGE)" grep -q 'Not a web page / no access' <<<"$STAGE"
 probe launcher "invoke('list_panels').then(ps => invoke('save_panels', {panels: ps.filter(p => !p.url.includes('62310')).map(p => ({id: p.id, name: p.name, url: p.url, icon: p.icon, health_path: p.health_path}))})).then(r => r.length)" >/dev/null
 check "bundled text inputs opt out of autofill" test "$(probe launcher "[...document.querySelectorAll('input[type=text]')].every(i => i.autocomplete === 'off')")" = "true"
 
