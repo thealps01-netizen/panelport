@@ -141,5 +141,9 @@ Each entry: the choice, and why. Made without asking the owner, as briefed; revi
 31. **Runtime proof instead of a mock.** The setting can only be read from a real WebView2, so
     `--self-test` creates a hidden `panel-selftest` window with a throwaway data folder, calls the
     same `passwords::enable` as real panel windows, and reports the read-back; the clean-runner
-    job fails unless both values are `true`. The same job runs a best-effort probe of the save
-    prompt against a throwaway login page with throwaway credentials, in an isolated profile.
+    job fails unless both values are `true`.
+32. **No automated proof of the save-password prompt itself.** Driving a panel window from a
+    test needs WebView2's DevTools port. WebView2 ignores `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`
+    for Panelport because wry always sets the browser arguments itself, so the port would have to
+    be a switch built into the release binary. That exposes a local debugging interface in the
+    shipped app, so it was not added; the prompt is left to a manual check.

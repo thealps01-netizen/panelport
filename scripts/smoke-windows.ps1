@@ -76,56 +76,7 @@ if (Select-String -Path $log.FullName -Pattern '\[ERROR\]' -Quiet) { Fail 'the l
 Stop-Process -Id $app.Id -Force
 Start-Sleep -Seconds 2
 
-# 7. Save-password probe (best effort, never fails the job): a throwaway login page on this
-#    runner, throwaway credentials, an isolated Panelport profile and WebView2 data folder.
-try {
-    $probe = Join-Path $env:RUNNER_TEMP 'pp-pwprobe'
-    $site = Join-Path $probe 'site'
-    New-Item -ItemType Directory -Force -Path (Join-Path $probe 'data'), $site | Out-Null
-    Set-Content (Join-Path $site 'index.html') -Encoding utf8 -Value '<!doctype html><html><head><title>Throwaway login</title></head><body><h1>Throwaway login</h1><form action="/welcome.html" method="get"><input id="u" name="username" autocomplete="username"><input id="p" name="password" type="password" autocomplete="current-password"><button id="b" type="submit">Sign in</button></form></body></html>'
-    Set-Content (Join-Path $site 'welcome.html') -Encoding utf8 -Value '<!doctype html><html><head><title>Signed in</title></head><body><h1>Signed in</h1></body></html>'
-    $settings = @{ schema = 1; discovery_offered = $true; close_hint_shown = $true; panels = @(@{ id = 'pprobelogin'; name = 'Throwaway login'; url = 'http://127.0.0.1:8765/'; health_path = '/'; icon = 'monogram' }) }
-    $settings | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $probe 'data\settings.json') -Encoding utf8
-    $srv = Start-Process -FilePath python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', "`"$site`"" -PassThru -WindowStyle Hidden
-    Add-Type -Path (Join-Path $PSScriptRoot 'smoke-cdp.cs')
-    $env:PANELPORT_PROFILE_DIR = $probe
-    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9333'
-    $pp = Start-Process -FilePath $exe.FullName -PassThru
-    Remove-Item Env:PANELPORT_PROFILE_DIR, Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
-    $launcher = $null
-    for ($i = 0; $i -lt 60 -and -not $launcher; $i++) { Start-Sleep 1; try { $launcher = [Cdp]::FindTarget(9333, 'launcher.html') } catch {} }
-    if (-not $launcher) { throw 'no DevTools target for the launcher' }
-    Start-Sleep 4
-    # The bundled launcher page opens the panel exactly as a click on its card does.
-    [Cdp]::Send($launcher, 'Runtime.evaluate', '{"expression":"invoke(\"open_panel\",{id:\"pprobelogin\"}).then(()=>\"ok\",e=>JSON.stringify(e))","awaitPromise":true}') | Write-Host
-    $panel = $null
-    for ($i = 0; $i -lt 30 -and -not $panel; $i++) { Start-Sleep 1; try { $panel = [Cdp]::FindTarget(9333, '127.0.0.1:8765') } catch {} }
-    if (-not $panel) { throw 'no DevTools target for the panel window' }
-    Start-Sleep 3
-    # Type like a user (Input.insertText), then press Enter to submit.
-    [Cdp]::Send($panel, 'Runtime.evaluate', '{"expression":"document.getElementById(\"u\").focus()"}') | Out-Null
-    [Cdp]::Send($panel, 'Input.insertText', '{"text":"throwaway-user"}') | Out-Null
-    [Cdp]::Send($panel, 'Runtime.evaluate', '{"expression":"document.getElementById(\"p\").focus()"}') | Out-Null
-    [Cdp]::Send($panel, 'Input.insertText', '{"text":"Throwaway-Only-1234"}') | Out-Null
-    [Cdp]::Send($panel, 'Input.dispatchKeyEvent', '{"type":"keyDown","key":"Enter","code":"Enter","windowsVirtualKeyCode":13,"text":"\r"}') | Out-Null
-    [Cdp]::Send($panel, 'Input.dispatchKeyEvent', '{"type":"keyUp","key":"Enter","code":"Enter","windowsVirtualKeyCode":13}') | Out-Null
-    Start-Sleep 5
-    $after = [Cdp]::Send($panel, 'Runtime.evaluate', '{"expression":"location.pathname + \" | \" + document.title"}')
-    Write-Host "after submit: $after"
-    $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-    $bmp.Save((Join-Path $OutDir 'save-password-probe.png'), [System.Drawing.Imaging.ImageFormat]::Png)
-    $g.Dispose(); $bmp.Dispose()
-    Write-Host 'save-password probe: screenshot taken (save-password-probe.png)'
-    Stop-Process -Id $pp.Id -Force -ErrorAction SilentlyContinue
-    Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue
-} catch {
-    Write-Host "save-password probe could not run: $_"
-}
-
-# 8. Uninstall silently.
+# 7. Uninstall silently.
 Start-Sleep -Seconds 2
 $un = Join-Path $dir 'uninstall.exe'
 if (Test-Path $un) {
