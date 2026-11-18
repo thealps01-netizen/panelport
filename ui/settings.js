@@ -45,9 +45,9 @@ function renderRows() {
     };
     return h("div", { class: "prow" },
       avatar({ ...r, icon_data: r.icon === "favicon" ? r.icon_data : null, name: r.name || "?" }),
-      field("name", h("input", { type: "text", value: r.name, maxlength: "60", oninput: bind("name") })),
-      field("address", h("input", { type: "text", value: r.url, placeholder: "http://localhost:3552", spellcheck: "false", oninput: bind("url") })),
-      field("healthPath", h("input", { type: "text", value: r.health_path, placeholder: "/", spellcheck: "false", oninput: bind("health_path") })),
+      field("name", h("input", { type: "text", value: r.name, maxlength: "60", autocomplete: "off", oninput: bind("name") })),
+      field("address", h("input", { type: "text", value: r.url, placeholder: "http://localhost:3552", spellcheck: "false", autocomplete: "off", oninput: bind("url") })),
+      field("healthPath", h("input", { type: "text", value: r.health_path, placeholder: "/", spellcheck: "false", autocomplete: "off", oninput: bind("health_path") })),
       field("icon", iconSel),
       h("div", { class: "ops" },
         h("button", { class: "ghost icon", title: t("moveUp"), "aria-label": t("moveUp"), disabled: i === 0, onclick: move(-1) }, icon("up")),

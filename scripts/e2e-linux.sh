@@ -73,6 +73,7 @@ shot() { # name window-title [delay]: raise the window to the top-left corner, c
 cleanup() {
   [ -n "${APP_PID:-}" ] && kill "$APP_PID" 2>/dev/null
   [ -n "${HTTP_PID:-}" ] && kill "$HTTP_PID" 2>/dev/null
+  [ -n "${API_PID:-}" ] && kill "$API_PID" 2>/dev/null
   [ -n "${XVFB_PID:-}" ] && kill "$XVFB_PID" 2>/dev/null
   cp "$WORK"/data/*/logs/*.log "$OUT/" 2>/dev/null || find "$WORK" -name '*.log' -exec cp {} "$OUT/" \;
   rm -rf "$WORK"
@@ -83,6 +84,9 @@ trap cleanup EXIT
 docker compose -f "$ROOT/tests/e2e/compose.yaml" up -d --wait >/dev/null 2>&1 || docker compose -f "$ROOT/tests/e2e/compose.yaml" up -d
 python3 -m http.server 8765 --bind 127.0.0.1 --directory "$WORK" >/dev/null 2>&1 &
 HTTP_PID=$!
+# A local program API that answers 401 in plain text (like the cua daemon): not a panel.
+python3 "$ROOT/tests/e2e/api401.py" 62310 >/dev/null 2>&1 &
+API_PID=$!
 Xvfb :99 -screen 0 1600x1000x24 >/dev/null 2>&1 &
 XVFB_PID=$!
 export DISPLAY=:99
@@ -105,19 +109,21 @@ done
 CANDS="$(probe launcher "[...document.querySelectorAll('#find-body .cand')].map(r => ({url: r.dataset.url, name: r.querySelector('input[type=text]').value, ticked: r.querySelector('input[type=checkbox]').checked, badge: r.querySelector('.badge').textContent}))")"
 echo "$CANDS" > "$OUT/candidates.json"
 check "discovery finds Arcane (docker) pre-ticked" jq -e 'any(.[]; .url == "http://localhost:3552/" and .ticked and (.badge | test("Docker: arcane")))' <<<"$CANDS"
-check "discovery finds whoami container port 8081" jq -e 'any(.[]; .url == "http://localhost:8081/")' <<<"$CANDS"
+check "discovery finds the nginx container web page on 8082, pre-ticked" jq -e 'any(.[]; .url == "http://localhost:8082/" and .ticked)' <<<"$CANDS"
+check "discovery skips whoami on 8081 (plain-text answer, not a web page)" jq -e 'all(.[]; .url != "http://localhost:8081/")' <<<"$CANDS"
 check "discovery finds plain local web server on 8765" jq -e 'any(.[]; .url == "http://localhost:8765/")' <<<"$CANDS"
 check "discovery skips the socket proxy (no published port)" jq -e 'all(.[]; .url != "http://localhost:2375/")' <<<"$CANDS"
+check "discovery skips a 401 plain-text API port (62310)" jq -e 'all(.[]; .url != "http://localhost:62310/")' <<<"$CANDS"
 shot 01-first-run-find-panels Panelport
 
 # Tick Arcane and whoami only, add them.
-js launcher "document.querySelectorAll('#find-body .cand').forEach(r => { r.querySelector('input[type=checkbox]').checked = /:(3552|8081)\\//.test(r.dataset.url); }); updateAddButton(); document.getElementById('find-add').click();"
+js launcher "document.querySelectorAll('#find-body .cand').forEach(r => { r.querySelector('input[type=checkbox]').checked = /:(3552|8082)\\//.test(r.dataset.url); }); updateAddButton(); document.getElementById('find-add').click();"
 sleep 3
 PANELS="$(probe launcher "invoke('list_panels').then(ps => ps.map(p => ({id: p.id, name: p.name, url: p.url, state: p.state})))")"
 echo "$PANELS" > "$OUT/panels.json"
 check "two panels added" jq -e 'length == 2' <<<"$PANELS"
 ARCANE_ID="$(jq -r '.[] | select(.url == "http://localhost:3552/") | .id' <<<"$PANELS")"
-WHOAMI_ID="$(jq -r '.[] | select(.url == "http://localhost:8081/") | .id' <<<"$PANELS")"
+WEB_ID="$(jq -r '.[] | select(.url == "http://localhost:8082/") | .id' <<<"$PANELS")"
 for _ in $(seq 1 20); do
   st="$(probe launcher "invoke('list_panels').then(ps => ps.map(p => p.state).join(','))")"
   [ "$st" = '"up,up"' ] && break
@@ -129,6 +135,21 @@ shot 02-launcher-healthy Panelport 3
 # The Find panels sheet keeps its buttons on screen with a long candidate list.
 FITS="$(probe launcher "(() => { state.candidates = Array.from({length: 25}, (_, i) => ({url: 'http://localhost:' + (9000 + i) + '/', name: 'Test ' + i, port: 9000 + i, container: null, title: null, recommended: false})); renderCandidates(); document.getElementById('find').classList.remove('hidden'); const r = document.getElementById('find-add').getBoundingClientRect(); const ok = r.top >= 0 && r.bottom <= innerHeight; document.getElementById('find').classList.add('hidden'); return ok; })()")"
 check "find sheet buttons stay visible with 25 candidates" test "$FITS" = "true"
+
+# A panel added by hand on the 401 API port shows "not a web page / no access", not "running".
+probe launcher "invoke('list_panels').then(ps => invoke('save_panels', {panels: ps.map(p => ({id: p.id, name: p.name, url: p.url, icon: p.icon, health_path: p.health_path})).concat([{id: '', name: 'Daemon API', url: 'http://localhost:62310/', icon: 'monogram', health_path: '/'}])})).then(r => r.length)" >/dev/null
+for _ in $(seq 1 20); do
+  NP="$(probe launcher "invoke('list_panels').then(ps => ps.filter(p => p.url.includes('62310')).map(p => p.state + '|' + p.detail)[0])")"
+  case "$NP" in *not_page*) break ;; esac
+  sleep 1
+done
+check "a 401 plain-text panel is shown as not a web page ($NP)" grep -q 'not_page|HTTP 401, text/plain' <<<"$NP"
+sleep 2
+CARD="$(probe launcher "[...document.querySelectorAll('.card')].filter(c => c.title.includes('62310')).map(c => c.querySelector('.status').textContent)[0]")"
+check "launcher card says 'Not a web page / no access' ($CARD)" grep -q 'Not a web page / no access' <<<"$CARD"
+shot 02b-launcher-not-a-page Panelport 1
+probe launcher "invoke('list_panels').then(ps => invoke('save_panels', {panels: ps.filter(p => !p.url.includes('62310')).map(p => ({id: p.id, name: p.name, url: p.url, icon: p.icon, health_path: p.health_path}))})).then(r => r.length)" >/dev/null
+check "bundled inputs opt out of autofill" test "$(probe launcher "[...document.querySelectorAll('input[type=text]')].every(i => i.autocomplete === 'off')")" = "true"
 
 # Set Arcane's health path to /api/health through the Settings flow's command.
 probe launcher "invoke('list_panels').then(ps => invoke('save_panels', {panels: ps.map(p => ({id: p.id, name: p.name, url: p.url, icon: p.icon, health_path: p.url.includes('3552') ? '/api/health' : p.health_path}))})).then(r => r.length)" >/dev/null
@@ -154,7 +175,7 @@ echo "plugin:opener|open_url from Arcane origin: $IPC3" | tee -a "$OUT/ipc-probe
 check "Arcane origin cannot call the opener plugin" grep -qv ALLOWED <<<"$IPC3"
 
 # ---- 4. navigation guard -----------------------------------------------------------------
-js "$PL" "location.href = 'http://localhost:8081/'"
+js "$PL" "location.href = 'http://localhost:8082/'"
 sleep 2
 check "navigating the Arcane window to another origin is blocked" wait_url "$PL" "http://localhost:3552/" 3
 js "$PL" "location.href = 'file:///etc/passwd'"
@@ -205,7 +226,7 @@ sleep 12
 check "after Docker is back, Start containers is offered" grep -q true <<<"$(probe "$PL" "!!document.getElementById('start-containers')")"
 js "$PL" "document.getElementById('start-containers').click()"
 check "Arcane comes back after Docker restart" wait_url "$PL" "http://localhost:3552/" 90
-docker start test-whoami >/dev/null 2>&1
+docker start test-whoami test-web >/dev/null 2>&1
 
 # ---- 7. single instance ------------------------------------------------------------------
 timeout 20 "$BIN" >/dev/null 2>&1

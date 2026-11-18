@@ -19,7 +19,7 @@ Each entry: the choice, and why. Made without asking the owner, as briefed; revi
    Container-backed HTML pages are pre-ticked; others are offered unticked.
 4. **Health rule:** any HTTP answer below 500 is "up" (login redirects and 401/403 mean the
    panel is alive); 5xx is "server error" (amber); no answer is "down". Redirects are not
-   followed for checks.
+   followed for checks. Changed in 1.0.1: see 28.
 5. **Debounce:** a panel that was up must fail 2 checks in a row (≈10 s) before it counts as
    down; notifications per panel are at most one per 60 s, and a "back" notification is only sent
    after a "down" one.
@@ -108,3 +108,38 @@ Each entry: the choice, and why. Made without asking the owner, as briefed; revi
     be checked (for example over WebView2's debug port) without reading or changing the user's
     own Panelport data or their running instance. "Start with Windows" still writes the real
     Run key, so tests leave it alone.
+
+## 1.0.1
+
+28. **"Not a web page / no access" state.** A panel is something to look at, so an answer that is
+    not an HTML page is not "up". Rule per check:
+    - no answer: down (debounced as before); 5xx: server error (amber);
+    - 3xx: up (redirects are not followed; a web UI sending `/` to `/login` is alive);
+    - 4xx: up only when the body is an HTML document (a web UI's login or error page);
+      a non-HTML 4xx (an API wanting a token, JSON 401/403) is **not a web page**;
+    - 2xx: when the health path is `/` (the page the window shows) the answer must be HTML,
+      otherwise it is **not a web page**; a custom health path (Arcane's `/api/health` answers
+      JSON) only needs a status below 400.
+    "Not a web page" shows an amber dot, counts as degraded (amber tray icon, never red), is set
+    on the first such answer (it is a definite answer, not an outage, so no debounce), sends no
+    notification of its own, and puts the panel window on the status page. A "back" notification
+    that is owed after a "down" one is still sent when the panel becomes up, even if it answered
+    "not a web page" in between.
+29. **Discovery offers HTML pages only.** A port is offered only when its start page is an HTML
+    document: content type `text/html`/`application/xhtml+xml`, or no content type (or
+    `application/octet-stream`) and a body starting with `<!doctype html` or `<html`. Same-origin
+    redirects are followed up to 3 times; other redirects end the probe. Every offered page
+    served by a Docker container is pre-ticked (all candidates are web pages now).
+30. **Saved passwords in panel windows.** WebView2 defaults `IsPasswordAutosaveEnabled` and
+    `IsGeneralAutofillEnabled` to false. Panel windows (`panel-*` only) set both to true through
+    `ICoreWebView2Settings4` right after the window is created; the launcher and settings windows
+    keep the defaults and their inputs say `autocomplete="off"`. Saved data lives in Panelport's
+    own WebView2 data folder (`%LOCALAPPDATA%\io.github.thealps01-netizen.panelport\EBWebView`),
+    protected by WebView2 for the Windows user, not synced and not shared with Edge. This is
+    chosen over a Panelport-made password vault: WebView2's manager matches logins per site and
+    already handles encryption; Panelport never sees the passwords.
+31. **Runtime proof instead of a mock.** The setting can only be read from a real WebView2, so
+    `--self-test` creates a hidden `panel-selftest` window with a throwaway data folder, calls the
+    same `passwords::enable` as real panel windows, and reports the read-back; the clean-runner
+    job fails unless both values are `true`. The same job runs a best-effort probe of the save
+    prompt against a throwaway login page with throwaway credentials, in an isolated profile.

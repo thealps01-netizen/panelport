@@ -45,6 +45,11 @@ pub fn step(
                 PanelState::Error
             };
         }
+        // An answer that is not a web page is definite (not an outage), so no debounce.
+        Health::NotPage => {
+            rt.fails = 0;
+            rt.state = PanelState::NotPage;
+        }
         Health::Down => {
             rt.fails += 1;
             // A panel never seen up is shown as down at once (no notification); a panel that
@@ -63,10 +68,9 @@ pub fn step(
         rt.last_notified = Some(now);
         return Some(Transition::WentDown);
     }
-    if prev == PanelState::Down
-        && matches!(rt.state, PanelState::Up | PanelState::Error)
-        && rt.down_notified
-    {
+    // "Back" is owed only after a "down" was sent; a "not a web page" phase in between (an API
+    // answering first while the panel restarts) does not cancel it.
+    if matches!(rt.state, PanelState::Up | PanelState::Error) && rt.down_notified {
         rt.down_notified = false;
         rt.last_notified = Some(now);
         return Some(Transition::CameBack);
@@ -96,7 +100,8 @@ fn cycle(app: &AppHandle, state: &AppState) {
                 let url = urls::parse_panel_url(&p.url).ok()?;
                 let target = urls::health_url(&url, &p.health_path);
                 let id = p.id.clone();
-                Some(s.spawn(move || (id, http::check(&target, CHECK_TIMEOUT))))
+                let expect_page = p.health_path == crate::settings::DEFAULT_HEALTH_PATH;
+                Some(s.spawn(move || (id, http::check(&target, CHECK_TIMEOUT, expect_page))))
             })
             .collect();
         handles.into_iter().filter_map(|h| h.join().ok()).collect()
@@ -272,5 +277,49 @@ mod tests {
         assert_eq!(a.state, PanelState::Down);
         // And since no "down" was sent, no "back" either.
         assert_eq!(step(&mut a, Health::Up, Some(200), "".into(), t2), None);
+    }
+
+    #[test]
+    fn not_a_page_is_its_own_state_set_at_once_and_silent() {
+        let now = Instant::now();
+        let mut a = rt();
+        step(&mut a, Health::Up, Some(200), "".into(), now);
+        // One answer is enough (it is an answer, not an outage) and it sends no notification.
+        assert_eq!(
+            step(&mut a, Health::NotPage, Some(401), "HTTP 401".into(), now),
+            None
+        );
+        assert_eq!(a.state, PanelState::NotPage);
+        assert_eq!(step(&mut a, Health::Up, Some(200), "".into(), now), None);
+        assert_eq!(a.state, PanelState::Up);
+        // A panel first seen as "not a page" is shown that way without a notification.
+        let mut b = rt();
+        assert_eq!(
+            step(&mut b, Health::NotPage, Some(401), "".into(), now),
+            None
+        );
+        assert_eq!(b.state, PanelState::NotPage);
+    }
+
+    #[test]
+    fn back_is_reported_even_after_a_not_a_page_phase() {
+        let now = Instant::now();
+        let mut a = rt();
+        step(&mut a, Health::Up, Some(200), "".into(), now);
+        step(&mut a, Health::Down, None, "x".into(), now);
+        assert_eq!(
+            step(&mut a, Health::Down, None, "x".into(), now),
+            Some(Transition::WentDown)
+        );
+        // Restarting, the panel first answers 401 from its API, then serves its page again.
+        let later = now + Duration::from_secs(120);
+        assert_eq!(
+            step(&mut a, Health::NotPage, Some(401), "".into(), later),
+            None
+        );
+        assert_eq!(
+            step(&mut a, Health::Up, Some(200), "".into(), later),
+            Some(Transition::CameBack)
+        );
     }
 }

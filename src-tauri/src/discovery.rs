@@ -16,7 +16,7 @@ pub struct Candidate {
     /// Container name when Docker publishes this port.
     pub container: Option<String>,
     pub title: Option<String>,
-    /// Pre-ticked in the list (container-backed web pages).
+    /// Pre-ticked in the list (web pages served by a Docker container).
     pub recommended: bool,
 }
 
@@ -130,25 +130,35 @@ pub fn parse_proc_net_tcp(text: &str) -> Vec<u16> {
 
 struct Probe {
     title: Option<String>,
-    html: bool,
 }
 
+/// Offers a port only when its start page is an HTML document. Same-origin redirects (a web UI
+/// sending `/` to `/login`) are followed up to 3 times; redirects elsewhere are not.
 fn probe(port: u16) -> Option<Probe> {
-    let url = Url::parse(&format!("http://localhost:{port}/")).ok()?;
-    let page = http::get(&url, Duration::from_millis(1500), 128 * 1024).ok()?;
-    // A panel answers its start page; 404 at "/" is an API or system endpoint, 5xx is broken.
-    if page.status >= 500 || page.status == 404 {
-        return None;
+    let mut url = Url::parse(&format!("http://localhost:{port}/")).ok()?;
+    for _ in 0..4 {
+        let page = http::get(&url, Duration::from_millis(1500), 128 * 1024).ok()?;
+        if (300..400).contains(&page.status) {
+            let next = url.join(page.location.as_deref()?).ok()?;
+            if !crate::urls::same_origin(&next, &url) {
+                return None;
+            }
+            url = next;
+            continue;
+        }
+        // 404 at the start page is an API or system endpoint, 5xx is broken; anything else
+        // must be an actual web page (APIs answering 401/403 or JSON are not panels).
+        if page.status >= 500 || page.status == 404 {
+            return None;
+        }
+        if !http::is_html_document(&page.content_type, &page.body) {
+            return None;
+        }
+        return Some(Probe {
+            title: http::html_title(&page.body),
+        });
     }
-    let html = page.content_type.contains("html");
-    Some(Probe {
-        title: if html {
-            http::html_title(&page.body)
-        } else {
-            None
-        },
-        html,
-    })
+    None
 }
 
 fn pretty(name: &str) -> String {
@@ -220,7 +230,7 @@ pub fn discover(known: &[Url]) -> Vec<Candidate> {
                 port,
                 container: container.map(|c| c.name.clone()),
                 title: probe.title,
-                recommended: container.is_some() && probe.html,
+                recommended: container.is_some(),
             });
         }
     }
@@ -280,7 +290,6 @@ Etkin Bağlantılar
         });
         let p = probe(port).expect("probe");
         assert_eq!(p.title.as_deref(), Some("Test Panel"));
-        assert!(p.html);
     }
 
     #[test]
@@ -302,6 +311,74 @@ Etkin Bağlantılar
             }
         });
         assert!(probe(port).is_none());
+    }
+
+    #[test]
+    fn api_401_plain_text_endpoint_is_not_offered() {
+        use crate::testutil::{response, serve};
+        // The cua daemon's API port: 401, text/plain, no page.
+        let port = serve(vec![response(
+            "401 Unauthorized",
+            "text/plain; charset=utf-8",
+            "",
+            "missing or wrong daemon token",
+        )]);
+        assert!(probe(port).is_none());
+    }
+
+    #[test]
+    fn json_endpoint_is_not_offered() {
+        use crate::testutil::{response, serve};
+        let port = serve(vec![response(
+            "200 OK",
+            "application/json",
+            "",
+            r#"{"version":"1.2.3"}"#,
+        )]);
+        assert!(probe(port).is_none());
+    }
+
+    #[test]
+    fn redirect_to_a_login_page_is_offered() {
+        use crate::testutil::{response, serve};
+        let port = serve(vec![
+            response("302 Found", "", "Location: /login\r\n", ""),
+            response(
+                "200 OK",
+                "text/html; charset=utf-8",
+                "",
+                "<!doctype html><title>Sign in</title>",
+            ),
+        ]);
+        let p = probe(port).expect("redirect to an HTML login page is a panel");
+        assert_eq!(p.title.as_deref(), Some("Sign in"));
+    }
+
+    #[test]
+    fn redirect_to_another_site_is_not_followed() {
+        use crate::testutil::{response, serve};
+        let port = serve(vec![response(
+            "302 Found",
+            "",
+            "Location: https://example.com/\r\n",
+            "",
+        )]);
+        assert!(probe(port).is_none());
+    }
+
+    #[test]
+    fn html_without_content_type_is_offered() {
+        use crate::testutil::{response, serve};
+        let port = serve(vec![response(
+            "200 OK",
+            "",
+            "",
+            "<!DOCTYPE html><html><title>Bare</title></html>",
+        )]);
+        assert_eq!(
+            probe(port).expect("bare HTML").title.as_deref(),
+            Some("Bare")
+        );
     }
 
     #[test]

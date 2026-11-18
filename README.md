@@ -35,6 +35,7 @@ answering. It is a small Windows app built with Tauri 2 and Rust.
   otherwise.
 - No telemetry and no update checks. Panelport only connects to the panel addresses you add and
   to Docker on this computer.
+- Panel windows can save the passwords you type into them (see "Saved passwords").
 
 ## Install
 
@@ -63,6 +64,22 @@ Report security problems privately as described in [SECURITY.md](SECURITY.md).
 | Program | `%LOCALAPPDATA%\Panelport` |
 | Settings (`settings.json`) and cached panel icons | `%LOCALAPPDATA%\io.github.thealps01-netizen.panelport` |
 | Logs (1 MB per file, 3 old files kept) | `%LOCALAPPDATA%\io.github.thealps01-netizen.panelport\logs` |
+| Saved passwords and other browsing data of panel windows | `%LOCALAPPDATA%\io.github.thealps01-netizen.panelport\EBWebView` |
+
+## Saved passwords
+
+When you sign in to a panel, its window offers to save the password, and fills it in the next
+time. This is the password manager built into Microsoft's WebView2, the browser engine
+Panelport uses; Panelport itself never reads or stores your passwords.
+
+- Passwords are kept only on this PC, in Panelport's own WebView2 folder (see the table above),
+  protected by WebView2 for your Windows user account.
+- They are not synced to a Microsoft account and not shared with Microsoft Edge or any other
+  browser.
+- Panelport's own windows (launcher, settings) do not save or fill anything.
+- To delete all saved passwords: quit Panelport (tray icon → *Quit*), then delete the
+  `EBWebView` folder. This also signs you out of every panel. The uninstaller keeps the folder
+  unless you tick its option to delete the app data.
 
 ## Building
 

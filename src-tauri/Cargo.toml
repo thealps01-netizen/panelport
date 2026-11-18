@@ -1,6 +1,6 @@
 [package]
 name = "panelport"
-version = "1.0.0"
+version = "1.0.1"
 description = "Panelport - open your locally hosted web panels as native windows"
 authors = ["thealps01-netizen"]
 license = "MIT"
@@ -33,6 +33,8 @@ base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
+webview2-com = "0.39"
+windows-core = "0.62"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico", "test"] }

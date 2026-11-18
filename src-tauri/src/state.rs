@@ -39,6 +39,8 @@ pub enum PanelState {
     Up,
     /// Reachable but answering with server errors.
     Error,
+    /// Reachable, but the answer is not a web page (for example an API that wants a key).
+    NotPage,
     Down,
 }
 

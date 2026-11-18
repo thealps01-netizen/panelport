@@ -13,7 +13,7 @@ From the release page download:
 Check that the download is intact and unchanged. In **PowerShell**, in your Downloads folder:
 
 ```powershell
-Get-FileHash .\Panelport_1.0.0_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\Panelport_1.0.1_x64-setup.exe -Algorithm SHA256
 ```
 
 The long number it prints must be the same as the one next to the installer's name in
@@ -23,14 +23,14 @@ If you use the GitHub command line tool, you can also check that the file was bu
 project's GitHub workflow:
 
 ```powershell
-gh attestation verify .\Panelport_1.0.0_x64-setup.exe -R thealps01-netizen/panelport
+gh attestation verify .\Panelport_1.0.1_x64-setup.exe -R thealps01-netizen/panelport
 ```
 
 ## 2. Install
 
 Double-click the installer. It installs **for your user only** into
 `%LOCALAPPDATA%\Panelport` and needs no administrator rights. A Start menu entry is created.
-Silent install for scripts: `Panelport_1.0.0_x64-setup.exe /S`.
+Silent install for scripts: `Panelport_1.0.1_x64-setup.exe /S`.
 
 ### "Windows protected your PC" (SmartScreen)
 

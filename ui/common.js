@@ -10,6 +10,7 @@ const STRINGS = {
     up: "Running",
     down: "Not reachable",
     error: "Server error",
+    not_page: "Not a web page / no access",
     checking: "Checking…",
     nPanels: (n) => (n === 1 ? "1 panel" : `${n} panels`),
     nUp: (n) => `${n} running`,
@@ -63,6 +64,8 @@ const STRINGS = {
     connecting: (n) => `Connecting to ${n}…`,
     cantReach: (n) => `Can't reach ${n}`,
     serverError: (n) => `${n} answers with an error`,
+    notPageTitle: (n) => `${n} is not a web page Panelport can show`,
+    notPageIntro: "The address answers, but not with a web page — usually a program's interface that needs a key. Check the address and health check path in Settings, or remove this panel.",
     downIntro: "Panelport keeps trying and opens the panel as soon as it answers.",
     dockerEngine: "Docker engine",
     engineRunning: "Running",
@@ -90,6 +93,7 @@ const STRINGS = {
     up: "Çalışıyor",
     down: "Ulaşılamıyor",
     error: "Sunucu hatası",
+    not_page: "Web sayfası değil / erişim yok",
     checking: "Denetleniyor…",
     nPanels: (n) => `${n} panel`,
     nUp: (n) => `${n} çalışıyor`,
@@ -141,6 +145,8 @@ const STRINGS = {
     connecting: (n) => `${n} paneline bağlanılıyor…`,
     cantReach: (n) => `${n} paneline ulaşılamıyor`,
     serverError: (n) => `${n} hata ile yanıt veriyor`,
+    notPageTitle: (n) => `${n}, Panelport'un gösterebileceği bir web sayfası değil`,
+    notPageIntro: "Adres yanıt veriyor ama bir web sayfasıyla değil; genellikle anahtar isteyen bir program arayüzü. Ayarlar'da adresi ve sağlık denetimi yolunu denetleyin ya da bu paneli kaldırın.",
     downIntro: "Panelport denemeyi sürdürüyor ve panel yanıt verir vermez açıyor.",
     dockerEngine: "Docker motoru",
     engineRunning: "Çalışıyor",
@@ -218,7 +224,7 @@ function avatar(panel) {
 }
 
 function statusLabel(state) {
-  return { up: t("up"), down: t("down"), error: t("error"), checking: t("checking") }[state] || state;
+  return { up: t("up"), down: t("down"), error: t("error"), not_page: t("not_page"), checking: t("checking") }[state] || state;
 }
 
 function statusEl(state) {

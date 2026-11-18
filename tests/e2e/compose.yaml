@@ -23,3 +23,7 @@ services:
     image: traefik/whoami:v1.10
     container_name: test-whoami
     ports: ["0.0.0.0:8081:80"]
+  web:
+    image: nginx:1.29-alpine
+    container_name: test-web
+    ports: ["127.0.0.1:8082:80"]

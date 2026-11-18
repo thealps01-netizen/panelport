@@ -51,6 +51,17 @@ fn png(bytes: &'static [u8]) -> Option<Image<'static>> {
         .ok()
 }
 
+/// Status dot and status words shown next to a panel in the tray menu.
+pub fn dot_and_word(st: PanelState, t: &'static i18n::T) -> (&'static [u8], &'static str) {
+    match st {
+        PanelState::Up => (DOT_GREEN, t.up),
+        PanelState::Error => (DOT_AMBER, t.error),
+        PanelState::Down => (DOT_RED, t.down),
+        PanelState::Checking => (DOT_GREY, t.checking),
+        PanelState::NotPage => (DOT_AMBER, t.not_page),
+    }
+}
+
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let state = app.state::<Arc<AppState>>();
     let menu = build_menu(app, &state)?;
@@ -95,13 +106,7 @@ fn build_menu(app: &AppHandle, state: &AppState) -> tauri::Result<Menu<tauri::Wr
         )?)?;
     }
     for p in &panels {
-        let st = state.panel_state(&p.id);
-        let (dot, word) = match st {
-            PanelState::Up => (DOT_GREEN, t.up),
-            PanelState::Error => (DOT_AMBER, t.error),
-            PanelState::Down => (DOT_RED, t.down),
-            PanelState::Checking => (DOT_GREY, t.checking),
-        };
+        let (dot, word) = dot_and_word(state.panel_state(&p.id), t);
         let text = format!("{} — {word}", p.name);
         menu.append(&IconMenuItem::with_id(
             app,
@@ -251,5 +256,18 @@ mod tests {
         assert_eq!(overall(&[Up, Error]), Overall::Degraded);
         assert_eq!(overall(&[Down, Down]), Overall::Down);
         assert_eq!(overall(&[Checking]), Overall::Idle);
+        // "Not a web page" is a problem with the panel, but not an outage: amber, never red.
+        assert_eq!(overall(&[Up, NotPage]), Overall::Degraded);
+        assert_eq!(overall(&[NotPage, NotPage]), Overall::Degraded);
+        assert_eq!(overall(&[Down, NotPage]), Overall::Degraded);
+    }
+
+    #[test]
+    fn not_a_page_has_its_own_tray_dot_and_words() {
+        let (dot, word) = dot_and_word(PanelState::NotPage, crate::i18n::t(crate::i18n::Lang::En));
+        assert_eq!(dot, DOT_AMBER);
+        assert_eq!(word, "not a web page / no access");
+        let (_, tr) = dot_and_word(PanelState::NotPage, crate::i18n::t(crate::i18n::Lang::Tr));
+        assert_eq!(tr, "web sayfası değil / erişim yok");
     }
 }

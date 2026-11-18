@@ -2667,7 +2667,7 @@ dependencies = [
 
 [[package]]
 name = "panelport"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "base64 0.22.1",
  "log",
@@ -2683,6 +2683,8 @@ dependencies = [
  "tauri-plugin-single-instance",
  "ureq",
  "url",
+ "webview2-com",
+ "windows-core",
  "winreg",
 ]
 

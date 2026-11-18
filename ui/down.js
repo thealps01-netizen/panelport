@@ -48,9 +48,11 @@ function render(d) {
   document.getElementById("avatar").replaceChildren(avatar(p));
   document.getElementById("url").textContent = p.url;
   const head = p.state === "checking" ? t("connecting", p.name)
-    : p.state === "error" ? t("serverError", p.name) : t("cantReach", p.name);
+    : p.state === "error" ? t("serverError", p.name)
+    : p.state === "not_page" ? t("notPageTitle", p.name) : t("cantReach", p.name);
   document.getElementById("headline").textContent = head;
-  document.getElementById("intro").textContent = p.state === "checking" ? "" : t("downIntro");
+  document.getElementById("intro").textContent = p.state === "checking" ? ""
+    : p.state === "not_page" ? t("notPageIntro") : t("downIntro");
 
   const steps = [];
   if (d.local && d.engine) {
@@ -65,7 +67,8 @@ function render(d) {
     }
   }
   if (p.state !== "checking") {
-    steps.push(step(t("panelAddress"), p.status ? `HTTP ${p.status}` : (p.detail || t("noAnswer")), p.state === "error" ? "error" : "down"));
+    const answer = p.state === "not_page" ? p.detail : p.status ? `HTTP ${p.status}` : (p.detail || t("noAnswer"));
+    steps.push(step(t("panelAddress"), answer, p.state === "error" || p.state === "not_page" ? "not_page" : "down"));
   }
   document.getElementById("steps").replaceChildren(...steps);
 

@@ -11,6 +11,8 @@ pub enum Health {
     Up,
     /// Answered, but with a server error (5xx).
     Error,
+    /// Answered, but not with a web page (for example an API answering 401 in plain text).
+    NotPage,
     /// No HTTP answer at all.
     Down,
 }
@@ -26,7 +28,27 @@ pub struct Check {
 pub struct Page {
     pub status: u16,
     pub content_type: String,
+    pub location: Option<String>,
     pub body: Vec<u8>,
+}
+
+/// True when the answer is an HTML document: an HTML content type, or no usable content type
+/// and a body that starts like an HTML document.
+pub fn is_html_document(content_type: &str, body: &[u8]) -> bool {
+    let ct = content_type.trim().to_ascii_lowercase();
+    if ct.starts_with("text/html") || ct.starts_with("application/xhtml+xml") {
+        return true;
+    }
+    if !(ct.is_empty() || ct.starts_with("application/octet-stream")) {
+        return false;
+    }
+    let body = body.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(body);
+    let start = body
+        .iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .unwrap_or(body.len());
+    let head: Vec<u8> = body[start..body.len().min(start + 15)].to_ascii_lowercase();
+    head.starts_with(b"<!doctype html") || head.starts_with(b"<html")
 }
 
 fn agent(timeout: Duration) -> ureq::Agent {
@@ -50,19 +72,49 @@ fn describe(e: &ureq::Error) -> String {
     }
 }
 
-pub fn check(url: &Url, timeout: Duration) -> Check {
+/// Health of one check. `expect_page` is true when the checked URL is the page the panel window
+/// shows (health path `/`); then only an HTML answer counts as up. A configured health path may
+/// answer anything below 400 (Arcane's `/api/health` answers JSON). A 4xx answer counts as up
+/// only when it is an HTML page (a login or error page of a web UI); a non-HTML 4xx is an API
+/// that wants a key, so the panel is "not a web page".
+pub fn check(url: &Url, timeout: Duration, expect_page: bool) -> Check {
     match agent(timeout).get(url.as_str()).call() {
-        Ok(resp) => {
+        Ok(mut resp) => {
             let status = resp.status().as_u16();
-            let health = if status >= 500 {
-                Health::Error
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+            let needs_body = (400..500).contains(&status) || (expect_page && status < 300);
+            let html = needs_body && {
+                let body = resp
+                    .body_mut()
+                    .with_config()
+                    .limit(64 * 1024)
+                    .read_to_vec()
+                    .unwrap_or_default();
+                is_html_document(&content_type, &body)
+            };
+            let health = match status {
+                500.. => Health::Error,
+                300..=399 => Health::Up,
+                400..=499 if !html => Health::NotPage,
+                200..=299 if expect_page && !html => Health::NotPage,
+                _ => Health::Up,
+            };
+            let detail = if health == Health::NotPage {
+                let ct = content_type.split(';').next().unwrap_or("").trim();
+                let ct = if ct.is_empty() { "no content type" } else { ct };
+                format!("HTTP {status}, {ct}")
             } else {
-                Health::Up
+                format!("HTTP {status}")
             };
             Check {
                 health,
                 status: Some(status),
-                detail: format!("HTTP {status}"),
+                detail,
             }
         }
         Err(e) => Check {
@@ -86,6 +138,11 @@ pub fn get(url: &Url, timeout: Duration, limit: u64) -> Result<Page, String> {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_ascii_lowercase();
+    let location = resp
+        .headers()
+        .get("location")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
     let body = resp
         .body_mut()
         .with_config()
@@ -95,6 +152,7 @@ pub fn get(url: &Url, timeout: Duration, limit: u64) -> Result<Page, String> {
     Ok(Page {
         status,
         content_type,
+        location,
         body,
     })
 }
@@ -205,6 +263,7 @@ mod tests {
         let c = check(
             &Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap(),
             Duration::from_secs(2),
+            true,
         );
         assert_eq!(c.health, Health::Down);
     }
@@ -231,9 +290,77 @@ mod tests {
             }
         });
         let url = Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap();
-        let a = check(&url, Duration::from_secs(3));
+        let a = check(&url, Duration::from_secs(3), true);
         assert_eq!((a.health, a.status), (Health::Up, Some(302)));
-        let b = check(&url, Duration::from_secs(3));
+        let b = check(&url, Duration::from_secs(3), true);
         assert_eq!((b.health, b.status), (Health::Error, Some(503)));
+    }
+
+    fn check_once(resp: String, expect_page: bool) -> Check {
+        let port = crate::testutil::serve(vec![resp]);
+        let url = Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap();
+        check(&url, Duration::from_secs(3), expect_page)
+    }
+
+    #[test]
+    fn api_401_in_plain_text_is_not_a_page() {
+        use crate::testutil::response;
+        // What the cua daemon answers on its API port.
+        let r = response(
+            "401 Unauthorized",
+            "text/plain; charset=utf-8",
+            "",
+            "missing or wrong daemon token",
+        );
+        let c = check_once(r, true);
+        assert_eq!((c.health, c.status), (Health::NotPage, Some(401)));
+    }
+
+    #[test]
+    fn json_403_is_not_a_page_even_on_a_custom_health_path() {
+        use crate::testutil::response;
+        let r = response(
+            "403 Forbidden",
+            "application/json",
+            "",
+            r#"{"error":"forbidden"}"#,
+        );
+        assert_eq!(check_once(r, false).health, Health::NotPage);
+    }
+
+    #[test]
+    fn html_login_page_with_401_is_up() {
+        use crate::testutil::response;
+        let r = response(
+            "401 Unauthorized",
+            "text/html",
+            "",
+            "<!doctype html><title>Sign in</title>",
+        );
+        assert_eq!(check_once(r, true).health, Health::Up);
+    }
+
+    #[test]
+    fn json_200_is_up_on_a_health_path_but_not_as_the_page() {
+        use crate::testutil::response;
+        let r = || response("200 OK", "application/json", "", r#"{"status":"UP"}"#);
+        // Arcane's /api/health answers JSON: fine for a configured health path...
+        assert_eq!(check_once(r(), false).health, Health::Up);
+        // ...but a panel whose start page is JSON is not a web page.
+        assert_eq!(check_once(r(), true).health, Health::NotPage);
+    }
+
+    #[test]
+    fn html_document_detection() {
+        assert!(is_html_document("text/html; charset=utf-8", b""));
+        assert!(is_html_document("application/xhtml+xml", b""));
+        assert!(is_html_document("", b"\xEF\xBB\xBF  <!DOCTYPE html><html>"));
+        assert!(is_html_document("", b"\n<html lang=en>"));
+        assert!(!is_html_document("", b"missing or wrong daemon token"));
+        assert!(!is_html_document(
+            "text/plain",
+            b"<html>looks like html</html>"
+        ));
+        assert!(!is_html_document("application/json", b"{}"));
     }
 }

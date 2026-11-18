@@ -226,6 +226,8 @@ pub fn open_panel(app: &AppHandle, id: &str) -> Result<(), String> {
     let w = b
         .build()
         .map_err(|e| format!("creating panel window failed: {e}"))?;
+    // Panel windows (only these) may save the logins typed into them.
+    crate::passwords::enable(&w);
     match &panel.geometry {
         Some(g) => apply_geometry(&w, g),
         None => {
@@ -258,7 +260,7 @@ pub fn sync_panel_windows(app: &AppHandle, state: &AppState) {
                 log::warn!("navigate back to panel failed: {e}");
             }
         } else if !showing_local
-            && st == PanelState::Down
+            && matches!(st, PanelState::Down | PanelState::NotPage)
             && urls::same_origin(&current, &panel_url)
         {
             lock(&state.last_url).insert(id.to_string(), current);

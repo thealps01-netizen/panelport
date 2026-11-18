@@ -90,7 +90,7 @@ function renderCandidates() {
     h("label", { class: "cand", "data-url": c.url },
       h("input", { type: "checkbox", checked: c.recommended, onchange: updateAddButton }),
       h("div", { class: "minw0" },
-        h("input", { type: "text", value: c.name, "aria-label": t("name"), maxlength: "60", oninput: updateAddButton }),
+        h("input", { type: "text", value: c.name, "aria-label": t("name"), maxlength: "60", autocomplete: "off", oninput: updateAddButton }),
         h("div", { class: "meta" },
           h("span", { class: "mono muted" }, c.url),
           c.container ? h("span", { class: "badge" }, t("fromDocker", c.container)) : h("span", { class: "badge port" }, t("port", c.port)),

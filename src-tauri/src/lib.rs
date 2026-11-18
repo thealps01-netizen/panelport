@@ -9,9 +9,12 @@ pub mod http;
 pub mod i18n;
 pub mod icons;
 pub mod monitor;
+pub mod passwords;
 pub mod selftest;
 pub mod settings;
 pub mod state;
+#[cfg(test)]
+pub mod testutil;
 pub mod tray;
 pub mod urls;
 pub mod windows;
@@ -88,8 +91,9 @@ fn install_panic_hook() {
 
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
+    let context = tauri::generate_context!();
     if let Some(i) = args.iter().position(|a| a == "--self-test") {
-        std::process::exit(selftest::run(args.get(i + 1).map(String::as_str)));
+        std::process::exit(selftest::run(args.get(i + 1).map(String::as_str), context));
     }
     let autostarted = args.iter().any(|a| a == "--autostart");
     let lang = i18n::detect();
@@ -183,7 +187,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("Panelport failed to start");
 
     app.run(|app, event| match event {
